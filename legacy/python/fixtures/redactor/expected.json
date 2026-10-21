@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "plain-raw-and-v2",
+      "output_hex": "6265666f7265205b52454441435445442d53796e7468657469635d206166746572205b52454441435445442d53796e7468657469635d0a",
+      "replacements": 2
+    },
+    {
+      "id": "json-escaped",
+      "output_hex": "7b2276616c7565223a225b52454441435445442d457363617065645d227d0a",
+      "replacements": 1
+    },
+    {
+      "id": "longest-first",
+      "output_hex": "5b52454441435445442d4c6f6e675d205b52454441435445442d53686f72745d0a",
+      "replacements": 2
+    },
+    {
+      "id": "multiline-piece-cutoff",
+      "output_hex": "5b52454441435445442d4d756c74696c696e655d0a73686f72740a5b52454441435445442d4d756c74696c696e655d0a",
+      "replacements": 2
+    },
+    {
+      "id": "short-finding-threshold",
+      "output_hex": "6162636465205b52454441435445442d5369785d0a",
+      "replacements": 1
+    },
+    {
+      "id": "env-assignments",
+      "output_hex": "4150505f544f4b454e3d5b52454441435445445d204150505f50415353574f52443d5b52454441435445445d204150495f4b45593d5b52454441435445445d206f7264696e6172793d6b6565700a",
+      "replacements": 3
+    },
+    {
+      "id": "inline-pem",
+      "output_hex": "7b226b6579223a225b52454441435445442d505249564154452d4b45595d222c226b656570223a747275657d0a",
+      "replacements": 1
+    },
+    {
+      "id": "multiline-pem",
+      "output_hex": "6265666f7265205b52454441435445442d505249564154452d4b45595d0a2061667465720a6b6565700a",
+      "replacements": 1
+    },
+    {
+      "id": "unterminated-pem",
+      "output_hex": "6265666f72650a5b52454441435445442d505249564154452d4b45595d0a",
+      "replacements": 1
+    },
+    {
+      "id": "drop-lines",
+      "output_hex": "6b6565700a5b52454441435445442d4c494e455d0a6c6173740a",
+      "replacements": 1
+    },
+    {
+      "id": "drop-precedes-pem",
+      "output_hex": "5b52454441435445442d505249564154452d4b45595d0a5b52454441435445442d4c494e455d0a2061667465720a",
+      "replacements": 2
+    },
+    {
+      "id": "empty",
+      "output_hex": "",
+      "replacements": 0
+    },
+    {
+      "id": "no-final-newline",
+      "output_hex": "756e6368616e676564207461696c",
+      "replacements": 0
+    },
+    {
+      "id": "repeated-needle",
+      "output_hex": "5b52454441435445442d52657065617465645d205b52454441435445442d52657065617465645d0a",
+      "replacements": 2
+    },
+    {
+      "id": "duplicate-needle-first-detector",
+      "output_hex": "5b52454441435445442d46697273745d0a",
+      "replacements": 1
+    },
+    {
+      "id": "binary-bytes",
+      "output_hex": "ff00205b52454441435445442d42696e6172795d0a",
+      "replacements": 1
+    }
+  ]
+}
