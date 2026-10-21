@@ -43,12 +43,7 @@ ci-secrets)
 	gitleaks git --log-opts=HEAD --redact --no-banner
 	;;
 parity)
-	# Golden parity is introduced by A/D; absence is not represented as a passing test.
-	if [[ -f scripts/golden-parity.sh ]]; then
-		bash scripts/golden-parity.sh
-	else
-		printf 'Golden Rust parity not implemented yet (wave D); synthetic fixtures remain with A.\n'
-	fi
+	bash scripts/golden-parity.sh
 	;;
 *)
 	printf 'unknown gate: %s\n' "$1" >&2
