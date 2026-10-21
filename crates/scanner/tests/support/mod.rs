@@ -37,6 +37,46 @@ fn wrap_base64(encoded: &[u8]) -> Zeroizing<Vec<u8>> {
     wrapped
 }
 
+fn push_wrapped_layouts(carriers: &mut EncodedFixtures, padded: &[u8]) {
+    let encoded = Zeroizing::new(STANDARD.encode(padded));
+    for (case, name) in [
+        "base64-indented",
+        "base64-yaml-block",
+        "base64-first-prefix",
+        "base64-trailing-space",
+        "base64-json-indented",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut wrapped = Zeroizing::new(Vec::new());
+        if case == 1 {
+            wrapped.extend_from_slice(b"data: |\n");
+        } else if case == 4 {
+            wrapped.extend_from_slice(b"{\"out\":\"");
+        }
+        for (index, line) in encoded.as_bytes().chunks(76).enumerate() {
+            if matches!(case, 0 | 1 | 4) {
+                wrapped.extend_from_slice(b" \t ");
+            } else if case == 2 && index == 0 {
+                wrapped.extend_from_slice(b"secret: ");
+            }
+            wrapped.extend_from_slice(line);
+            wrapped.extend_from_slice(if case == 3 {
+                b" \t\n"
+            } else if case == 4 {
+                b"\\n"
+            } else {
+                b"\n"
+            });
+        }
+        if case == 4 {
+            wrapped.extend_from_slice(b"\"}\n");
+        }
+        carriers.push((name, wrapped));
+    }
+}
+
 pub(crate) fn encoding_variants() -> Result<EncodedFixtures, Box<dyn std::error::Error>> {
     let (input, manifest) = corpus();
     let plant = manifest
@@ -84,6 +124,7 @@ pub(crate) fn encoding_variants() -> Result<EncodedFixtures, Box<dyn std::error:
         "base64-wrapped",
         wrap_base64(STANDARD.encode(&padded).as_bytes()),
     ));
+    push_wrapped_layouts(&mut carriers, &padded);
     let mut binary = Zeroizing::new(vec![0xfb, 0xff, 0xff, b' ']);
     binary.extend_from_slice(value);
     binary.push(b' ');

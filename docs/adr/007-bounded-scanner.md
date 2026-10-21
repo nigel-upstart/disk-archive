@@ -104,8 +104,12 @@ Known recoverable encoded secrets must not pass merely because direct scanning
 misses them. Preflight probes JSON Unicode/ordinary escapes, percent escapes,
 standard/URL-safe base64 candidates (at least eight canonical alphabet bytes,
 with or without padding), and BOM/NUL-indicated UTF16LE/BE at both byte alignments.
-Base64-only physical lines are also inspected as one bounded joined run, stripping
-CR/LF so wrapping cannot split a secret. Each line is independently checked too.
+Consecutive Base64 physical fragments are inspected as a bounded joined run,
+trimming surrounding spaces/tabs and CR/LF. A non-Base64 prefix line seeds the
+run from its trailing Base64 token. The same normalization applies recursively,
+including JSON-unescaped newline-plus-indentation. These tested layouts cannot
+hide a secret across a wrap boundary; arbitrary formatting is not covered by a
+universal completeness claim. Each physical line is independently checked too.
 Four fixed alphabet-alignment probes preserve payloads absorbed by identifier
 prefixes; one impossible trailing sextet may be omitted, never complete payload
 bytes. Normalization maps URL-safe characters to their standard-alphabet values. Standard-library
@@ -122,8 +126,16 @@ transformed-span provenance, not a literal-presence shortcut. Issue #18 retains
 offset-aware redaction work, not permission to upload known secrets.
 
 Carrier, canonical encoded buffer and decoded-buffer sizes are at most 1 MiB
-each. Plain records are checked at LF/EOF; NUL-bearing UTF16 and consecutive
-base64-only lines retain their bounded carrier together. Exceeding the cap blocks,
+each. These are allocation ceilings, **not guaranteed accepted input sizes**.
+Plain records are checked at LF/EOF; after the first NUL the entire remainder
+through EOF stays one sticky UTF16 carrier, even across bare LF. Resetting at LF
+would lose multiline UTF16 secrets. Both alignments and byte orders are probed;
+wrong-endian/misaligned UTF16 can expand by 3/2 into a 1 MiB decoded buffer, so
+relevant NUL-bearing inputs reach an effective limit near **699,050 bytes
+(~683 KiB)**. Synthetic controls accept 699,048 bytes and reject 699,054 bytes;
+other content can exhaust budgets earlier. Exceeding that effective limit retains
+the source with `Budget`, not clean success. Consecutive Base64 fragments also
+retain their bounded carrier together. Exceeding the carrier cap blocks,
 never truncates and certifies a prefix. A long run of single base64-alphabet words
 can be an ambiguous wrapped carrier even if intended as plaintext; beyond 1 MiB it
 is retained with `Budget`. Ordinary multi-record prose does not accumulate lifetime

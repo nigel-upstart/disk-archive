@@ -145,6 +145,153 @@ fn wrapped_and_identifier_prefixed_carriers_do_not_certify_clean()
     Ok(())
 }
 
+fn whitespace_wrapped(text: &str, case: usize) -> Vec<u8> {
+    let encoded = STANDARD.encode(text);
+    let mut output = if case == 1 {
+        String::from("data: |\n")
+    } else if case == 4 {
+        String::from("{\"out\":\"")
+    } else {
+        String::new()
+    };
+    for (index, line) in encoded.as_bytes().chunks(76).enumerate() {
+        output.push_str(match case {
+            0 | 1 | 4 => " \t ",
+            2 if index == 0 => "secret: ",
+            _ => "",
+        });
+        for &byte in line {
+            output.push(char::from(byte));
+        }
+        output.push_str(if case == 3 {
+            " \t\n"
+        } else if case == 4 {
+            "\\n"
+        } else {
+            "\n"
+        });
+    }
+    if case == 4 {
+        output.push_str("\"}\n");
+    }
+    output.into_bytes()
+}
+
+fn assert_wrapped_blocked(case: usize) -> Result<(), Box<dyn std::error::Error>> {
+    // The secret crosses decoded byte 57, so neither physical line suffices.
+    let text = format!(
+        "{} demo_abcd1234efgh5678 {}",
+        "x".repeat(48),
+        "z".repeat(20)
+    );
+    let carrier = whitespace_wrapped(&text, case);
+    for chunk in [1, 2, 3, 7, 64 * 1024] {
+        let scanner = scanner(chunk)?;
+        assert_eq!(
+            scanner.scan(carrier.as_slice(), |_| Ok(())),
+            Err(ScanError::UnsupportedEncoding)
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn r2_indented_wrapping_blocks() -> Result<(), Box<dyn std::error::Error>> {
+    assert_wrapped_blocked(0)
+}
+
+#[test]
+fn r2_yaml_block_scalar_blocks() -> Result<(), Box<dyn std::error::Error>> {
+    assert_wrapped_blocked(1)
+}
+
+#[test]
+fn r2_first_line_prefix_blocks() -> Result<(), Box<dyn std::error::Error>> {
+    assert_wrapped_blocked(2)
+}
+
+#[test]
+fn r2_trailing_horizontal_space_blocks() -> Result<(), Box<dyn std::error::Error>> {
+    assert_wrapped_blocked(3)
+}
+
+#[test]
+fn r2_json_escaped_indentation_blocks() -> Result<(), Box<dyn std::error::Error>> {
+    assert_wrapped_blocked(4)
+}
+
+#[test]
+fn recursive_whitespace_wrapping_and_benign_controls() -> Result<(), Box<dyn std::error::Error>> {
+    let scanner = scanner(7)?;
+    let secret = format!(
+        "{} demo_abcd1234efgh5678 {}",
+        "x".repeat(48),
+        "z".repeat(20)
+    );
+    let benign = format!("{} public_documentation {}", "x".repeat(48), "z".repeat(20));
+    for case in 0..5 {
+        for (text, blocked) in [(&secret, true), (&benign, false)] {
+            let raw = whitespace_wrapped(text, case);
+            // Physical layout, Base64-of-layout, and percent-unescaped layout
+            // must use the same joining rules, not only the raw reader path.
+            let carriers = [
+                raw.clone(),
+                STANDARD.encode(&raw).into_bytes(),
+                escaped(std::str::from_utf8(&raw)?, false)?,
+            ];
+            for carrier in carriers {
+                let result = scanner.scan(carrier.as_slice(), |_| Ok(()));
+                if blocked {
+                    assert_eq!(result, Err(ScanError::UnsupportedEncoding));
+                } else {
+                    assert_eq!(result?.findings, 0);
+                }
+            }
+        }
+    }
+    // Independent unpadded lines must still be checked even if their joined
+    // decoding would shift the second carrier's secret.
+    let carrier = format!("cA\n{}\n", STANDARD.encode("demo_abcd1234efgh5678"));
+    assert_eq!(
+        scanner.scan(carrier.as_bytes(), |_| Ok(())),
+        Err(ScanError::UnsupportedEncoding)
+    );
+    Ok(())
+}
+
+#[test]
+fn sticky_nul_remainder_obeys_effective_utf16_expansion_limit()
+-> Result<(), Box<dyn std::error::Error>> {
+    let scanner = scanner(64 * 1024)?;
+    for (size, blocked) in [
+        (600 * 1024, false),
+        (699_048, false),
+        (699_054, true),
+        (690 * 1024, true),
+        (1000 * 1024, true),
+    ] {
+        let mut carrier = b"h\0\n".to_vec();
+        carrier.resize(size, b'a');
+        let result = scanner.scan(carrier.as_slice(), |_| Ok(()));
+        if blocked {
+            assert_eq!(result, Err(ScanError::Budget));
+        } else {
+            assert_eq!(result?.findings, 0);
+        }
+    }
+    // Bare LF must NOT clear the sticky carrier: the NUL's whole remainder
+    // stays bounded, even when later records look like ordinary JSONL.
+    let ordinary = b"{\"k\": \"ordinary prose\"}\n".repeat(48_000);
+    assert_eq!(scanner.scan(ordinary.as_slice(), |_| Ok(()))?.findings, 0);
+    let mut with_nul = b"header\0\n".to_vec();
+    with_nul.extend_from_slice(&ordinary);
+    assert_eq!(
+        scanner.scan(with_nul.as_slice(), |_| Ok(())),
+        Err(ScanError::Budget)
+    );
+    Ok(())
+}
+
 #[test]
 fn benign_encoded_values_are_not_blanket_rejected() -> Result<(), Box<dyn std::error::Error>> {
     let scanner = scanner(7)?;

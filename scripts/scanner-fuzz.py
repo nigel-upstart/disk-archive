@@ -26,6 +26,16 @@ seeds.extend([
 ])
 wrapped = base64.b64encode(("x" * 48 + " " + token).encode())
 seeds.extend([b"secret_" + base64.b64encode(token.encode()), b"\r\n".join(wrapped[start:start + 76] for start in range(0, len(wrapped), 76))])
+fragments = [wrapped[start:start + 76] for start in range(0, len(wrapped), 76)]
+indented = b"\n".join(b" \t " + fragment for fragment in fragments)
+seeds.extend([
+    indented,
+    b"data: |\n" + indented,
+    b"secret: " + b"\n".join(fragments),
+    b" \t\n".join(fragments) + b" \t\n",
+    b'{"out":"' + b"\\n".join(b" \t " + fragment for fragment in fragments) + b'"}\n',
+    base64.b64encode(indented),
+])
 for encoding in ("utf-16-le", "utf-16-be"):
     raw = token.encode(encoding)
     encoded = base64.b64encode(raw)

@@ -51,23 +51,41 @@ impl<'a> Preflight<'a> {
                     .record
                     .get(self.line_start..self.used)
                     .ok_or(ScanError::Budget)?;
-                let base64_line = line.iter().any(|byte| is_base64(*byte))
-                    && line
-                        .iter()
-                        .all(|byte| is_base64(*byte) || b"=\r\n".contains(byte));
+                let trimmed = trim_layout(line);
+                let base64_line = trimmed.iter().any(|byte| is_base64(*byte))
+                    && trimmed.iter().all(|byte| is_base64(*byte) || *byte == b'=');
                 if base64_line {
                     // Check each physical line AND the bounded joined run.
                     // Independent unpadded carriers must not shift one another;
                     // tiny wraps must not split a recoverable secret away.
                     inspect(self.scanner, &mut self.native, line, 0, &mut self.budget)?;
-                    let padded_end =
-                        line.iter().rev().find(|byte| !b"\r\n".contains(byte)) == Some(&b'=');
+                    let padded_end = trimmed.last() == Some(&b'=');
                     self.line_start = self.used;
                     if padded_end {
                         self.inspect_record()?;
                     }
                 } else {
+                    // A prefix (e.g. `secret: `) must not discard the first
+                    // fragment of a wrapped carrier. Inspect the complete raw
+                    // record before retaining only its trailing token as a seed.
+                    // Ordinary multiword records therefore do not accumulate.
+                    let tail = trimmed
+                        .rsplit(|byte| !is_base64(*byte) && *byte != b'=')
+                        .next()
+                        .filter(|tail| tail.iter().any(|byte| is_base64(*byte)))
+                        .unwrap_or_default();
+                    let mut seed = output(tail.len().saturating_add(1));
+                    if !tail.is_empty() {
+                        append(&mut seed, tail)?;
+                        append(&mut seed, b"\n")?;
+                    }
                     self.inspect_record()?;
+                    self.record
+                        .get_mut(..seed.len())
+                        .ok_or(ScanError::Budget)?
+                        .copy_from_slice(&seed);
+                    self.used = seed.len();
+                    self.line_start = self.used;
                 }
             }
         }
@@ -175,6 +193,48 @@ fn inspect(
 }
 
 fn inspect_base64(
+    scanner: &Scanner,
+    native: &mut BlockScanner<'_>,
+    bytes: &[u8],
+    depth: usize,
+    budget: &mut Budget,
+) -> Result<(), ScanError> {
+    if bytes.contains(&b'\n') {
+        // Also inspect independent lines: joining unpadded unrelated carriers
+        // can shift their alignment. Apply identical joining at every decoded
+        // level, including JSON-unescaped LF followed by indentation.
+        budget.charge(bytes.len(), depth)?;
+        let mut joined = output(bytes.len());
+        for line in bytes.split_inclusive(|byte| *byte == b'\n') {
+            inspect_base64_tokens(scanner, native, line, depth, budget)?;
+            append(&mut joined, trim_layout(line))?;
+            if line.last() == Some(&b'\n') {
+                append(&mut joined, b"\n")?;
+            }
+        }
+        inspect_base64_tokens(scanner, native, &joined, depth, budget)
+    } else {
+        inspect_base64_tokens(scanner, native, bytes, depth, budget)
+    }
+}
+
+fn trim_layout(mut bytes: &[u8]) -> &[u8] {
+    while let Some((&byte, rest)) = bytes.split_first() {
+        if !b" \t\r\n".contains(&byte) {
+            break;
+        }
+        bytes = rest;
+    }
+    while let Some((&byte, rest)) = bytes.split_last() {
+        if !b" \t\r\n".contains(&byte) {
+            break;
+        }
+        bytes = rest;
+    }
+    bytes
+}
+
+fn inspect_base64_tokens(
     scanner: &Scanner,
     native: &mut BlockScanner<'_>,
     bytes: &[u8],
