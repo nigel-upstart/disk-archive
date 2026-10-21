@@ -1,0 +1,14 @@
+id: no-proof-escape
+language: Rust
+severity: error
+message: No Verus assumption/admission/external-body escape hatch; exceptions require a reviewed explicit rule allowlist.
+files:
+  - "crates/**/*.rs"
+rule:
+  all:
+    - any:
+        - kind: call_expression
+        - kind: attribute_item
+        - kind: inner_attribute_item
+        - kind: token_tree
+    - regex: '(\b(assume|admit)\s*\(|\bexternal_body\b)'

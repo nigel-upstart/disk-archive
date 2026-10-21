@@ -1,0 +1,8 @@
+id: justify-lint-suppressions
+valid:
+  - "// LINT-JUSTIFICATION: Indexed loops match the proof language subset.\n#[allow(clippy::indexing_slicing)] fn f() {}"
+  - "fn f() {}"
+invalid:
+  - "// LINT-JUSTIFICATION: too short\n#[allow(clippy::panic)] fn f() {}"
+  - "#[allow(clippy::unwrap_used)] fn f() {}"
+  - "#![allow(clippy::panic)]"

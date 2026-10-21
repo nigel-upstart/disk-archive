@@ -1,0 +1,28 @@
+[graph]
+all-features = true
+
+[advisories]
+unmaintained = "all"
+yanked = "deny"
+# Exceptions must name an owner, reason, tracking issue, and YYYY-MM-DD expiry.
+ignore = []
+
+[licenses]
+confidence-threshold = 0.95
+allow = ["MIT", "Apache-2.0", "ISC", "BSD-3-Clause", "Unicode-3.0"]
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+# Add only explicitly reviewed duplicate versions, with an explanation and issue.
+skip = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = [
+  "https://github.com/awslabs/aws-s3-transfer-manager-rs",
+  "https://github.com/mongodb/kingfisher",
+]
+required-git-spec = "rev"

@@ -1,0 +1,52 @@
+id: no-blocking-in-async
+snapshots:
+  "async fn f() { fs::read(path); }":
+    labels:
+    - source: fs::read(path)
+      style: primary
+      start: 15
+      end: 29
+    - source: async fn f() { fs::read(path); }
+      style: secondary
+      start: 0
+      end: 32
+  "async fn f() { handle.block_on(work); }":
+    labels:
+    - source: handle.block_on(work)
+      style: primary
+      start: 15
+      end: 36
+    - source: async fn f() { handle.block_on(work); }
+      style: secondary
+      start: 0
+      end: 39
+  "async fn f() { if ready { std::fs::File::open(path); } }":
+    labels:
+    - source: std::fs::File::open(path)
+      style: primary
+      start: 26
+      end: 51
+    - source: async fn f() { if ready { std::fs::File::open(path); } }
+      style: secondary
+      start: 0
+      end: 56
+  "async fn f() { std::fs::read(path); }":
+    labels:
+    - source: std::fs::read(path)
+      style: primary
+      start: 15
+      end: 34
+    - source: async fn f() { std::fs::read(path); }
+      style: secondary
+      start: 0
+      end: 37
+  "async fn f() { std::thread::sleep(delay); }":
+    labels:
+    - source: std::thread::sleep(delay)
+      style: primary
+      start: 15
+      end: 40
+    - source: async fn f() { std::thread::sleep(delay); }
+      style: secondary
+      start: 0
+      end: 43

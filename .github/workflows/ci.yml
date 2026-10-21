@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'feat/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install pinned workspace Rust
+        run: |
+          pin=$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')
+          rustup toolchain install "$pin" --profile minimal --component clippy,rustfmt,llvm-tools-preview
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          version: 2026.10.15
+      - name: Install isolated Verus when its integration lands
+        run: |
+          if [[ -f scripts/verus-install.sh ]]; then
+            bash scripts/verus-install.sh
+          fi
+      - run: task check
+      - run: task ci:secrets
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cyclonedx-sbom
+          path: target/sbom/*.cdx.json
+          if-no-files-found: error
+  verus:
+    name: Isolated Verus integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install separate proof toolchain
+        run: |
+          if [[ -f scripts/verus-install.sh ]]; then
+            bash scripts/verus-install.sh
+          elif [[ -d crates/verified ]]; then
+            echo 'Verified crate exists without its isolated installer' >&2
+            exit 1
+          else
+            echo 'Scaffolding only: no verified crate yet; this is not a proof result.'
+          fi
+      - name: Verify only the dependency-free kernel
+        run: |
+          if [[ -d crates/verified ]]; then
+            bash scripts/verus-verify.sh
+          fi

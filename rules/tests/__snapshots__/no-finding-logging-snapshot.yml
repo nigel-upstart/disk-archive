@@ -1,0 +1,14 @@
+id: no-finding-logging
+snapshots:
+  "fn f() { log::error!(\"{}\", finding.value); }":
+    labels:
+    - source: log::error!("{}", finding.value)
+      style: primary
+      start: 9
+      end: 41
+  "fn f() { tracing::info!(?finding); }":
+    labels:
+    - source: tracing::info!(?finding)
+      style: primary
+      start: 9
+      end: 33

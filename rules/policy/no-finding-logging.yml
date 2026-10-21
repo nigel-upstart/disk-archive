@@ -1,0 +1,11 @@
+id: no-finding-logging
+language: Rust
+severity: error
+message: Never log finding objects or raw values; record detector names/counts explicitly.
+files:
+  - "crates/**/*.rs"
+rule:
+  all:
+    - kind: macro_invocation
+    - regex: '(trace|debug|info|warn|error|event|span|println|eprintln)!'
+    - regex: '\b(finding|findings|raw_value|secret|secret_value)\b'

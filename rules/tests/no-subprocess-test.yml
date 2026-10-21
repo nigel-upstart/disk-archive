@@ -1,0 +1,8 @@
+id: no-subprocess
+valid:
+  - "fn f() { scanner.scan(); }"
+invalid:
+  - "fn f() { std::process::Command::new(\"aws\"); }"
+  - "fn f() { tokio::process::Command::new(\"aws\"); }"
+  - "use std::process::Command;"
+  - "use std::{process::Command, path::Path};"

@@ -1,0 +1,26 @@
+id: env-in-config-only
+snapshots:
+  "fn f() { env::var_os(\"HOME\"); }":
+    labels:
+    - source: env::var_os("HOME")
+      style: primary
+      start: 9
+      end: 28
+  "fn f() { std::env::var(\"HOME\"); }":
+    labels:
+    - source: std::env::var("HOME")
+      style: primary
+      start: 9
+      end: 30
+  "use std::env;":
+    labels:
+    - source: use std::env;
+      style: primary
+      start: 0
+      end: 13
+  "use std::{env, path::Path};":
+    labels:
+    - source: use std::{env, path::Path};
+      style: primary
+      start: 0
+      end: 27

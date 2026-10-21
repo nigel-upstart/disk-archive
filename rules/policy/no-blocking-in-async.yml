@@ -1,0 +1,14 @@
+id: no-blocking-in-async
+language: Rust
+severity: error
+message: Blocking filesystem/sleep/block_on calls cannot run inside async functions.
+files:
+  - "crates/**/*.rs"
+rule:
+  all:
+    - kind: call_expression
+    - regex: '(^std::fs::|^fs::|^std::thread::sleep|^thread::sleep|\.block_on\(|\bHandle::block_on)'
+    - inside:
+        kind: function_item
+        regex: '\basync\s+fn\b'
+        stopBy: end

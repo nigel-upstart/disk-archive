@@ -1,0 +1,16 @@
+id: env-in-config-only
+language: Rust
+severity: error
+message: Environment lookups belong only in the config module.
+files:
+  - "crates/**/*.rs"
+ignores:
+  - "crates/core/src/config.rs"
+  - "crates/core/src/config/**"
+rule:
+  all:
+    - any:
+        - kind: call_expression
+        - kind: use_declaration
+        - kind: scoped_identifier
+    - regex: '(std::env::(var|vars|var_os|vars_os)|env::(var|vars|var_os|vars_os)|use std::env|\bstd::\{[^;]*\benv\b)'

@@ -1,0 +1,26 @@
+id: no-subprocess
+snapshots:
+  "fn f() { std::process::Command::new(\"aws\"); }":
+    labels:
+    - source: std::process::Command::new("aws")
+      style: primary
+      start: 9
+      end: 42
+  "fn f() { tokio::process::Command::new(\"aws\"); }":
+    labels:
+    - source: tokio::process::Command::new("aws")
+      style: primary
+      start: 9
+      end: 44
+  "use std::process::Command;":
+    labels:
+    - source: use std::process::Command;
+      style: primary
+      start: 0
+      end: 26
+  "use std::{process::Command, path::Path};":
+    labels:
+    - source: use std::{process::Command, path::Path};
+      style: primary
+      start: 0
+      end: 40

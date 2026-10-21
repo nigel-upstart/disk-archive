@@ -1,0 +1,6 @@
+id: no-finding-logging
+valid:
+  - "fn f() { tracing::info!(detector = label, count); }"
+invalid:
+  - "fn f() { tracing::info!(?finding); }"
+  - "fn f() { log::error!(\"{}\", finding.value); }"

@@ -1,0 +1,17 @@
+id: delete-requires-token
+language: Rust
+severity: error
+message: Deletion must be in a function receiving VerifiedUpload (and revalidate identity before unlink).
+files:
+  - "crates/**/*.rs"
+rule:
+  all:
+    - kind: call_expression
+    - regex: '(remove_file|unlink)\s*\('
+    - not:
+        inside:
+          kind: function_item
+          has:
+            field: parameters
+            regex: ':[^,)]*\bVerifiedUpload\b'
+          stopBy: end
