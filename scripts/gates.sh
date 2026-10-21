@@ -2,7 +2,8 @@
 set -euo pipefail
 case ${1:?gate required} in
 fmt)
-	cargo fmt --all --check
+	# The virtual root defaults to all own workspace members, excluding audited vendor.
+	cargo fmt --check
 	taplo fmt --check
 	shfmt -d scripts/*.sh
 	;;

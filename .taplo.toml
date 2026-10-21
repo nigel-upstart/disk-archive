@@ -1,2 +1,4 @@
+exclude = ["vendor/**"]
+
 [formatting]
 reorder_keys = false

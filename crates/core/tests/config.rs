@@ -45,6 +45,45 @@ fn load(text: &str) -> Result<Config, ConfigError> {
 }
 
 #[test]
+fn ca_bundle_fallback_is_read_only_and_app_setting_wins() -> TestResult {
+    let dir = Temp::new()?;
+    let file = dir.0.join("explicit.env");
+    std::fs::write(&file, base(""))?;
+    let fallback = env(&[("AWS_CA_BUNDLE", "fallback.pem")]);
+    let config = Config::load(Some(&file), &dir.0, &fallback).map_err(|_| "config")?;
+    assert_eq!(config.ca_bundle, Some(dir.0.join("fallback.pem")));
+    std::fs::write(&file, base("DISK_ARCHIVE_CA_BUNDLE=explicit.pem"))?;
+    let config = Config::load(Some(&file), &dir.0, &fallback).map_err(|_| "config")?;
+    assert_eq!(config.ca_bundle, Some(dir.0.join("explicit.pem")));
+    let app = env(&[
+        ("AWS_CA_BUNDLE", "fallback.pem"),
+        ("DISK_ARCHIVE_CA_BUNDLE", "environment.pem"),
+    ]);
+    let config = Config::load(Some(&file), &dir.0, &app).map_err(|_| "config")?;
+    assert_eq!(config.ca_bundle, Some(dir.0.join("environment.pem")));
+    for override_name in [
+        "AWS_ENDPOINT_URL",
+        "AWS_ENDPOINT_URL_S3",
+        "AWS_ENDPOINT_URL_STS",
+    ] {
+        assert!(
+            Config::load(
+                Some(&file),
+                &dir.0,
+                &env(&[(override_name, "https://invalid.example")])
+            )
+            .is_err()
+        );
+    }
+    assert!(!dir.0.join("fallback.pem").exists());
+    assert!(!dir.0.join("explicit.pem").exists());
+    assert!(!dir.0.join("environment.pem").exists());
+    std::fs::write(&file, base(""))?;
+    assert!(Config::load(Some(&file), &dir.0, &env(&[("AWS_CA_BUNDLE", "")])).is_err());
+    Ok(())
+}
+
+#[test]
 fn required_settings_and_invalid_values_fail_closed() {
     for text in [
         "",

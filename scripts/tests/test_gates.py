@@ -104,7 +104,7 @@ class PolicyTests(unittest.TestCase):
     def test_metadata_checks_only_verified_package(self):
         metadata = {"packages": [], "resolve": {"nodes": []}}
         isolated = {"packages": [{"manifest_path": "/unrelated/Cargo.toml", "dependencies": ["allowed"]}, {"manifest_path": str(Path("crates/verified/Cargo.toml").resolve()), "dependencies": []}]}
-        with patch.object(policy.pathlib.Path, "glob", return_value=[]), patch.object(policy, "check_manifest"), patch.object(policy.pathlib.Path, "exists", return_value=True), patch.object(policy.subprocess, "check_output", side_effect=[json.dumps(metadata).encode(), json.dumps(isolated).encode()]):
+        with patch.object(policy.pathlib.Path, "glob", return_value=[]), patch.object(policy, "check_manifest"), patch.object(policy, "check_vendor"), patch.object(policy.pathlib.Path, "exists", return_value=True), patch.object(policy.subprocess, "check_output", side_effect=[json.dumps(metadata).encode(), json.dumps(isolated).encode()]):
             policy.check_workspace()
 
 
