@@ -52,8 +52,20 @@ checksum-enabled HEAD must match actual checksum algorithm, type and value, comp
 all expected metadata and AES256 before the real verified kernel can mint `VerifiedUpload`.
 Restart performs that same fresh verification. The archiver must still revalidate the current
 source and consume the kernel's deletion permit under exclusive source/remote namespace ownership.
-ETags are selectors, never content hashes. CRC integrity assumes trusted S3/TLS checksum semantics;
-metadata echo alone is insufficient.
+ETags are selectors, never content hashes. After independently checking the additional checksum's
+algorithm, type and value, the adapter projects `RemoteEvidence` from observed HEAD facts: the
+request-bound key (S3 does not echo keys), actual Content-Length, canonical unsigned `orig-size`,
+strictly decoded 32-byte lowercase hex `sha256`/`orig-sha256`, and whether observed SSE is AES256.
+It never substitutes expected fields or constant encryption truth. Helper regressions bypass the
+adapter's redundant key/length/metadata/SSE prechecks and show the real kernel rejecting each
+projected mismatch; existing HTTP HEAD-fault tests cover the adapter separately.
+
+This projection is tested Rust, not a Verus theorem. Binding checksum and metadata to the same
+object trusts authenticated S3/TLS, the request/response adapter, preparation and exclusive namespace
+ownership. CRC64NVME is not collision-resistant, and multipart composite SHA256 is not whole-object
+SHA256. Their verification gates use of the observed whole-gzip SHA256 metadata; it does not
+cryptographically derive or prove that digest from the remote bytes. Metadata echo alone is
+insufficient, and the kernel's equality theorem does not remove these assumptions.
 
 Store clones share one transfer scheduler and one payload admission pool. Single PUT conservatively
 reserves and buffers its entire body in that pool; an object larger than available configured

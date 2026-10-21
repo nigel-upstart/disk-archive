@@ -253,9 +253,6 @@ pub fn verify(
         || expected.key != head.key
         || head.content_length != Some(expected.gzip_size)
         || head.encryption.as_deref() != Some("AES256")
-        || head.checksum_type.as_deref() != Some(expected.integrity.checksum_type())
-        || head.checksum_algorithm.as_deref() != Some(expected.integrity.algorithm())
-        || head.checksum_value.as_deref() != Some(expected.integrity.wire_value().as_str())
         || expected
             .metadata()
             .iter()
@@ -271,8 +268,7 @@ pub fn verify(
     {
         return Err(StoreError::Integrity);
     }
-    // Only AFTER independent actual-checksum verification may locally precomputed
-    // whole-gzip SHA populate kernel evidence. An echoed sha256 metadata alone is insufficient.
+    let remote = project_remote(head, &expected.integrity)?;
     lifecycle::verify_upload(
         &lifecycle::UploadExpectation {
             source: expected.source,
@@ -280,17 +276,69 @@ pub fn verify(
             compressed_size: expected.gzip_size,
             compressed_sha256: expected.gzip_sha256,
         },
-        &lifecycle::RemoteEvidence {
-            key: head.key.as_bytes().to_vec(),
-            content_length: expected.gzip_size,
-            gz_sha256: expected.gzip_sha256,
-            orig_size: expected.source.size,
-            orig_sha256: expected.source.sha256,
-            sse_aes256: true,
-        },
+        &remote,
     )
     .map_err(|_| StoreError::Integrity)
 }
+
+// This projection deliberately has no upload expectation to copy remote fields from.
+// The checksum gate is independent of user metadata. Binding that metadata to the
+// same object's bytes still trusts the S3/TLS adapter and exclusive namespace;
+// neither CRC nor multipart composite SHA proves a whole-object SHA256 digest.
+fn project_remote(
+    head: &HeadEvidence,
+    integrity: &Integrity,
+) -> Result<lifecycle::RemoteEvidence, StoreError> {
+    if head.checksum_type.as_deref() != Some(integrity.checksum_type())
+        || head.checksum_algorithm.as_deref() != Some(integrity.algorithm())
+        || head.checksum_value.as_deref() != Some(integrity.wire_value().as_str())
+    {
+        return Err(StoreError::Integrity);
+    }
+    let size = head
+        .metadata
+        .get("orig-size")
+        .ok_or(StoreError::Integrity)?;
+    // Canonical unsigned decimal only: no whitespace, sign or leading zeroes.
+    if size.is_empty()
+        || !size.bytes().all(|b| b.is_ascii_digit())
+        || (size.len() > 1 && size.starts_with('0'))
+    {
+        return Err(StoreError::Integrity);
+    }
+    Ok(lifecycle::RemoteEvidence {
+        key: head.key.as_bytes().to_vec(),
+        content_length: head.content_length.ok_or(StoreError::Integrity)?,
+        gz_sha256: metadata_sha(head, "sha256")?,
+        orig_size: size.parse().map_err(|_| StoreError::Integrity)?,
+        orig_sha256: metadata_sha(head, "orig-sha256")?,
+        sse_aes256: head.encryption.as_deref() == Some("AES256"),
+    })
+}
+
+fn metadata_sha(head: &HeadEvidence, key: &str) -> Result<[u8; 32], StoreError> {
+    let value = head.metadata.get(key).ok_or(StoreError::Integrity)?;
+    let mut decoded = [0_u8; 32];
+    if value.len() != 64 {
+        return Err(StoreError::Integrity);
+    }
+    for (out, pair) in decoded.iter_mut().zip(value.as_bytes().as_chunks::<2>().0) {
+        let mut byte = 0_u8;
+        for digit in pair {
+            let nibble = match digit {
+                b'0'..=b'9' => digit - b'0',
+                b'a'..=b'f' => digit - b'a' + 10,
+                _ => return Err(StoreError::Integrity),
+            };
+            byte = (byte << 4) | nibble;
+        }
+        *out = byte;
+    }
+    Ok(decoded)
+}
+
+#[cfg(test)]
+mod tests;
 
 pub(crate) fn valid_key(key: &str) -> bool {
     !key.is_empty() && key.len() <= 1024 && !key.chars().any(char::is_control)
