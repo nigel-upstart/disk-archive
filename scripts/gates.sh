@@ -30,6 +30,11 @@ supply-chain)
 	cargo machete
 	;;
 secrets)
+	# Restore a partial commit's index ONLY for this repository's staged guards.
+	# Never export it to tests, advisory fetches, dependency builds or SBOM tools.
+	if [[ -n ${_DISK_ARCHIVE_HOOK_INDEX_FILE-} ]]; then
+		export GIT_INDEX_FILE=$_DISK_ARCHIVE_HOOK_INDEX_FILE
+	fi
 	python3 scripts/policy.py staged
 	gitleaks git --staged --redact --no-banner
 	;;

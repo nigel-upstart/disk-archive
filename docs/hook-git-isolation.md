@@ -8,7 +8,10 @@
 Both Lefthook entries execute the unchanged full gates through `scripts/hook-run.sh`.
 The wrapper asks Git for `rev-parse --local-env-vars`, unsets every returned variable
 in its own process, then execs the requested command. It retains working directory,
-non-Git environment, exit status, and all checks. Enumeration failure is fatal.
+non-Git environment, exit status, and all checks. Enumeration failure is fatal. A partial commit's temporary index is resolved
+before cleanup and carried under a private non-Git variable. Only the staged
+secret-guard subprocess restores GIT_INDEX_FILE, so it scans the intended commit,
+not the default index; unrelated tools never receive that selector.
 Scratch Git fixture subprocesses also receive an explicitly isolated environment,
 so invoking their tests outside the wrapper cannot select the caller's repository.
 This is repository selection isolation, not a hook bypass or a secret filter.
@@ -29,7 +32,9 @@ fetch/reset and bare-cache initialization inherit the hook's GIT_DIR: the source
 HEAD, index and shared configuration change. With the wrapper, the same operations
 complete in their intended scratch repositories and source HEAD, configuration,
 index, staged/unstaged files and primary worktree remain byte-for-byte unchanged.
-No network, production inputs or live repository reset is used for reproduction.
+A real partial-commit regression also confirms a sentinel present only in the
+temporary commit index is rejected without exposing its value or changing source
+state. No network, production inputs or live repository reset is used for reproduction.
 This establishes the inherited-selector failure mechanism; without a process trace
 it does not attribute each original command to a specific third-party tool.
 

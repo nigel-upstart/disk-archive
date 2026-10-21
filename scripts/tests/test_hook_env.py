@@ -123,6 +123,33 @@ class HookEnvironmentTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr.decode())
             self.assertEqual(before, self.snapshot(source))
 
+    def test_partial_commit_secret_guard_uses_temporary_commit_index(self):
+        self.env = isolated_git_environment()
+        lefthook = shutil.which("lefthook")
+        self.assertIsNotNone(lefthook)
+        with tempfile.TemporaryDirectory(prefix="disk-archive-partial-index-") as directory:
+            source = Path(directory) / "source"
+            self.repo(source)
+            (source / "scripts").mkdir()
+            shutil.copy(ROOT / "scripts/policy.py", source / "scripts/policy.py")
+            shutil.copy(ROOT / ".gitleaks.toml", source / ".gitleaks.toml")
+            command = ["bash", str(ROOT / "scripts/hook-run.sh"), "bash", str(ROOT / "scripts/gates.sh"), "secrets"]
+            config = "pre-commit:\n  commands:\n    guards:\n      run: " + json.dumps(shlex.join(command)) + "\n"
+            (source / "lefthook.yml").write_text(config)
+            subprocess.run([lefthook, "install"], cwd=source, env=self.env, check=True, capture_output=True)
+            # Default index is harmless; only the temporary `commit --only` index
+            # contains the sentinel. Clearing GIT_INDEX_FILE without a scoped proxy
+            # would silently scan the wrong index and permit this commit.
+            sentinel = "unique-synthetic-partial-index-sentinel"
+            (source / ".env").write_text("KEY=" + sentinel)
+            (source / "tracked").write_text(sentinel)
+            before = self.snapshot(source)
+            result = subprocess.run(["git", "commit", "--only", "tracked", "-m", "must reject"],
+                                    cwd=source, env=self.env, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn(sentinel.encode(), result.stdout + result.stderr)
+            self.assertEqual(before, self.snapshot(source))
+
     def test_wrapper_preserves_failure_and_requires_command(self):
         env = isolated_git_environment()
         run = lambda args: subprocess.run(["bash", str(ROOT / "scripts/hook-run.sh"), *args], cwd=ROOT, env=env, capture_output=True)
