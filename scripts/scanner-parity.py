@@ -16,7 +16,7 @@ def main() -> None:
     planted = (root / "planted.txt").read_bytes()
     manifest = [line.split("\t") for line in (root / "manifest.tsv").read_text().splitlines()[1:]]
     report = {"version": "3.99.2", "verification": False, "families": {}, "benign_detector_counts": {}, "encoded_variants": {}}
-    for name in ("planted", "benign", "json-unicode", "url-percent", "base64", "utf16le", "utf16be", "utf16le-bom", "utf16be-bom", "base64-utf16le", "base64-utf16be"):
+    for name in ("planted", "benign", "json-unicode", "url-percent", "base64", "base64-assignment", "utf16le", "utf16be", "utf16le-bom", "utf16be-bom", "base64-utf16le", "base64-utf16be"):
         command = [binary, "filesystem", "--no-update", "--no-verification", "--json", "--log-level=-1", "--concurrency=1", "--fail-on-scan-errors", str(root / (name + ".txt"))]
         # Results containing raw values remain only in this process, never files,
         # logs, exception text or CI artifacts. Do not echo subprocess errors.

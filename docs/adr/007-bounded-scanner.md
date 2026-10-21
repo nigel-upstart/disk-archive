@@ -109,14 +109,19 @@ not delete them. Base64-of-UTF16 and bounded combinations use the same probes.
 Every decoded candidate is searched by the **same native selector and original
 confirmation expressions**. A confirmed decoded secret returns static
 `UnsupportedEncoding`: G must retain the original and perform no upload. No
-incorrect raw-offset finding or partial decoded redaction is emitted. Issue #18
-retains offset-aware redaction work, not permission to upload known secrets.
+incorrect raw-offset finding or partial decoded redaction is emitted. A secret
+found literally elsewhere does not exempt an encoded copy: literal redaction
+cannot remove base64/percent/UTF16 carriers. This conservative preflight can retain
+a direct secret with unrelated escapes too; allowing that case requires proper
+transformed-span provenance, not a literal-presence shortcut. Issue #18 retains
+offset-aware redaction work, not permission to upload known secrets.
 
 Carrier and decoded-buffer size is at most 1 MiB each. Plain records are checked
 at LF/EOF; NUL-bearing raw carriers retain adjacent physical lines together until
-EOF, blocking rather than truncating beyond the carrier cap. Each file allows
-262,144 decode attempts, 64 MiB of examined candidate bytes and four decoding
-levels. Exceeding any limit returns `Budget`, never clean success. Clean decoded
+EOF, blocking rather than truncating beyond the carrier cap. Each bounded carrier
+allows 262,144 decode attempts, 64 MiB of examined candidate bytes and four decoding
+levels. Fresh budgets per carrier keep ordinary multi-record files linear instead
+of accumulating false refusals with file length. Exceeding any limit returns `Budget`, never clean success. Clean decoded
 values and ordinary base64-looking text are not blanket rejected. These bounded
 probes are not an arbitrary/universal decoder-completeness claim.
 

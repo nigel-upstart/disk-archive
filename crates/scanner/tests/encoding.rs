@@ -51,6 +51,8 @@ fn encoded_only_secrets_block_at_every_read_boundary() -> Result<(), Box<dyn std
     let secret = "demo_abcd1234efgh5678";
     let mut carriers = vec![
         STANDARD.encode(secret).into_bytes(),
+        format!("PAYLOAD={}", STANDARD.encode(secret)).into_bytes(),
+        format!("https://example.invalid/?value={}", STANDARD.encode(secret)).into_bytes(),
         URL_SAFE_NO_PAD.encode(secret).into_bytes(),
         escaped(secret, true)?,
         escaped(secret, false)?,
@@ -151,6 +153,41 @@ fn depth_and_carrier_budgets_fail_closed_with_static_errors()
         .ok_or("expected static error")?;
     assert_eq!(error, ScanError::UnsupportedEncoding);
     assert!(!error.to_string().contains("D800"));
+    Ok(())
+}
+
+#[test]
+fn ordinary_records_do_not_exhaust_a_lifetime_decode_budget()
+-> Result<(), Box<dyn std::error::Error>> {
+    let scanner = scanner(64 * 1024)?;
+    let input = b"ordinary\n".repeat(262_145);
+    assert_eq!(scanner.scan(input.as_slice(), |_| Ok(()))?.findings, 0);
+    Ok(())
+}
+
+#[test]
+fn raw_literal_presence_does_not_excuse_a_hidden_encoded_copy()
+-> Result<(), Box<dyn std::error::Error>> {
+    let scanner = scanner(31)?;
+    let secret = "demo_abcd1234efgh5678";
+    for carrier in [
+        format!("{secret} {}", STANDARD.encode(secret)),
+        format!(
+            "{secret} {}",
+            escaped(secret, true)?
+                .iter()
+                .map(|byte| char::from(*byte))
+                .collect::<String>()
+        ),
+        // The minimum-safe preflight can conservatively retain even this case.
+        // Literal equality alone cannot prove whether a transformed copy is safe.
+        format!("{secret} unrelated%20escape"),
+    ] {
+        assert_eq!(
+            scanner.scan(carrier.as_bytes(), |_| Ok(())),
+            Err(ScanError::UnsupportedEncoding)
+        );
+    }
     Ok(())
 }
 

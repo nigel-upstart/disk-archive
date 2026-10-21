@@ -20,7 +20,6 @@ pub(crate) struct Preflight<'a> {
     record: Zeroizing<Vec<u8>>,
     used: usize,
     utf16_carrier: bool,
-    budget: Budget,
 }
 
 impl<'a> Preflight<'a> {
@@ -32,7 +31,6 @@ impl<'a> Preflight<'a> {
             record: Zeroizing::new(vec![0; CARRIER_BYTES]),
             used: 0,
             utf16_carrier: false,
-            budget: Budget::default(),
         })
     }
 
@@ -56,12 +54,15 @@ impl<'a> Preflight<'a> {
     }
 
     fn inspect_record(&mut self) -> Result<(), ScanError> {
+        // Bound work per bounded carrier, not lifetime file length. This keeps
+        // ordinary multi-record input linear without a cumulative false block.
+        let mut budget = Budget::default();
         inspect(
             self.scanner,
             &mut self.native,
             self.record.get(..self.used).ok_or(ScanError::Budget)?,
             0,
-            &mut self.budget,
+            &mut budget,
         )?;
         self.record
             .get_mut(..self.used)
@@ -193,7 +194,8 @@ fn output(capacity: usize) -> Zeroizing<Vec<u8>> {
 }
 
 fn append(output: &mut Vec<u8>, bytes: &[u8]) -> Result<(), ScanError> {
-    if output.len().saturating_add(bytes.len()) > output.capacity() {
+    let required = output.len().saturating_add(bytes.len());
+    if required > CARRIER_BYTES || required > output.capacity() {
         return Err(ScanError::Budget);
     }
     output.extend_from_slice(bytes);
@@ -201,7 +203,10 @@ fn append(output: &mut Vec<u8>, bytes: &[u8]) -> Result<(), ScanError> {
 }
 
 fn is_base64(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || b"+/-_=".contains(&byte)
+    // Padding is not payload. Treat '=' as a separator so assignments/query
+    // keys cannot absorb a carrier and make an internal-padding decode fail.
+    // Indifferent padding mode also accepts the resulting unpadded payload.
+    byte.is_ascii_alphanumeric() || b"+/-_".contains(&byte)
 }
 
 fn hex(byte: u8) -> Option<u32> {

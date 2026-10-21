@@ -54,6 +54,10 @@ pub(crate) fn encoding_variants() -> Result<EncodedFixtures, Box<dyn std::error:
             ),
         ),
     ];
+    carriers.push((
+        "base64-assignment",
+        Zeroizing::new(format!("PAYLOAD={}\n", STANDARD.encode(value)).into_bytes()),
+    ));
     let text = std::str::from_utf8(value)?;
     for (little, raw_name, b64_name, bom_name) in [
         (true, "utf16le", "base64-utf16le", "utf16le-bom"),
