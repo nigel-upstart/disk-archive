@@ -9,3 +9,7 @@ version = "0.1.0"
 [[package]]
 name = "disk-archive-core"
 version = "0.1.0"
+
+[[package]]
+name = "disk-archive-verified"
+version = "0.1.0"

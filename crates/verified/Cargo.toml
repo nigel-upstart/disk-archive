@@ -1,0 +1,10 @@
+[package]
+name = "disk-archive-verified"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT"
+description = "Dependency-free reference safety kernels; full Verus proofs pending"
+
+[lints]
+workspace = true

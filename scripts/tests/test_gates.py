@@ -193,6 +193,22 @@ class SbomTests(unittest.TestCase):
 
 
 class SecretScanTests(unittest.TestCase):
+    def test_pem_grammar_exception_is_exact_and_path_scoped(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            shutil.copy(ROOT / ".gitleaks.toml", root / ".gitleaks.toml")
+            path = root / "crates/verified/src/pem.rs"
+            path.parent.mkdir(parents=True)
+            content = (ROOT / "crates/verified/src/pem.rs").read_text()
+            path.write_text(content)
+            command = ["gitleaks", "dir", ".", "--redact", "--no-banner"]
+            self.assertEqual(subprocess.run(command, cwd=root, capture_output=True).returncode, 0)
+            path.write_text(content.replace("is_some()", "is_none()"))
+            self.assertNotEqual(subprocess.run(command, cwd=root, capture_output=True).returncode, 0)
+            path.unlink()
+            (root / "other.rs").write_text(content)
+            self.assertNotEqual(subprocess.run(command, cwd=root, capture_output=True).returncode, 0)
+
     def test_exact_allowlist_requires_both_content_and_path(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

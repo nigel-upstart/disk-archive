@@ -7,6 +7,16 @@ useDefault = true
 # The PEM matches span adjacent synthetic records because the default rule's
 # minimum length skips their deliberately tiny non-key bodies.
 [[allowlists]]
+description = "PEM delimiter grammar assertions only; no key body, exact match and path"
+condition = "AND"
+targetRules = ["private-key"]
+regexTarget = "match"
+paths = ['''^crates/verified/src/pem\.rs$''']
+regexes = ['''^-----BEGIN RSA PRIVATE KEY-----y"\)\.is_some\(\)\);
+        assert!\(begin\(b"-----BEGIN PRIVATE KEY-----"\)\.is_some\(\)\);
+        assert!\(begin\(b"-----BEGIN rsa PRIVATE KEY-----$''']
+
+[[allowlists]]
 description = "Invented non-credential fixture; exact match and path only"
 condition = "AND"
 targetRules = ["private-key"]
