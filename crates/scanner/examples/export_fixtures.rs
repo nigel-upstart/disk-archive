@@ -20,5 +20,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
     }
     std::fs::write("target/scanner-fixtures/manifest.tsv", description)?;
+    for (name, encoded) in support::encoding_variants()? {
+        std::fs::write(
+            format!("target/scanner-fixtures/{name}.txt"),
+            encoded.as_bytes(),
+        )?;
+    }
     Ok(())
 }

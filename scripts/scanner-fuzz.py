@@ -21,10 +21,14 @@ for index, seed in enumerate(seeds):
 
 command = [
     "cargo", "+nightly-2026-10-20", "fuzz", "run", "scanner_redactor",
-    "--locked", "--", "-runs=1000", "-max_len=131072", "-seed=488",
+    "--", "-runs=1000", "-max_len=131072", "-seed=488",
     "-timeout=10", "-exact_artifact_path=/dev/null",
 ]
+lock_path = Path("fuzz/Cargo.lock")
+lock = lock_path.read_bytes()
 result = subprocess.run(command, capture_output=True, timeout=2400)
+if lock_path.read_bytes() != lock:
+    sys.exit("fuzz run changed the pinned dependency graph")
 if result.returncode:
     sys.exit("scanner/core fuzz failed; output suppressed to protect generated input")
 if not re.search(rb"Done 1000 runs in [0-9]+ second", result.stderr):

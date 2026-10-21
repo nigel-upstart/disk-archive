@@ -64,8 +64,9 @@ impl Default for Limits {
     fn default() -> Self {
         Self {
             chunk_bytes: 64 * 1024,
-            match_bytes: 64 * 1024,
-            line_bytes: 32 * 1024,
+            match_bytes: 1024 * 1024,
+            // Core caps physical records INCLUDING LF at 1 MiB.
+            line_bytes: 1024 * 1024 - 1,
             findings: 65_536,
         }
     }

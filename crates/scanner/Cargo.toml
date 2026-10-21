@@ -18,6 +18,7 @@ regex-syntax = "0.8.8"
 zeroize = "1.8.2"
 
 [dev-dependencies]
+base64 = "=0.23.1"
 disk-archive-core = { path = "../core", version = "=0.1.0" }
 
 [lints]

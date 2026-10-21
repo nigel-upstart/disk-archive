@@ -10,7 +10,9 @@ use zeroize::Zeroizing;
 
 static SCANNER: OnceLock<Result<Scanner, ScanError>> = OnceLock::new();
 
-fuzz_target!(|input: &[u8]| {
+fuzz_target!(init: {
+    assert!(SCANNER.get_or_init(|| Scanner::builtin(Limits::default())).is_ok(), "full catalog failed initialization");
+}, |input: &[u8]| {
     let scanner = match SCANNER.get_or_init(|| Scanner::builtin(Limits::default())) {
         Ok(scanner) => scanner,
         Err(_) => panic!("full catalog failed initialization"),

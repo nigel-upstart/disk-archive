@@ -61,8 +61,12 @@ jobs:
       - name: Native prerequisites and separately pinned fuzz compiler
         run: |
           sudo apt-get update && sudo apt-get install -y build-essential cmake libboost-dev ragel pkg-config
-          rustup toolchain install nightly-2026-10-20 --profile minimal
+          rustup toolchain install nightly-2026-10-20 --profile minimal --component rust-src
           cargo install cargo-fuzz --version 0.13.2 --locked
+      - name: Build isolated fuzz target (no input or findings loaded)
+        run: |
+          cargo +nightly-2026-10-20 fetch --locked --manifest-path fuzz/Cargo.toml
+          cargo +nightly-2026-10-20 fuzz build scanner_redactor
       - name: Fuzz actual scanner and core without exposing fuzzer output
         run: python3 scripts/scanner-fuzz.py
   verus:

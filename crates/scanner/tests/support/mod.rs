@@ -1,4 +1,7 @@
 //! Deterministic synthetic corpus and independently planted location manifest.
+use std::fmt::Write;
+
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use zeroize::Zeroizing;
 
 /// The planting manifest is produced by the fixture builder, never by detection.
@@ -17,6 +20,39 @@ pub(crate) const BENIGN: &[&str] = &[
     "Public configuration: database=app; host=db.invalid; user=guest\n",
     "Unicode prose: 秘密 means secret; λ is a Greek letter.\n",
 ];
+
+pub(crate) type EncodedFixtures = Vec<(&'static str, Zeroizing<String>)>;
+
+pub(crate) fn encoding_variants() -> Result<EncodedFixtures, Box<dyn std::error::Error>> {
+    let (input, manifest) = corpus();
+    let plant = manifest
+        .iter()
+        .find(|plant| plant.family == "github")
+        .ok_or("missing synthetic family")?;
+    let value = input
+        .get(usize::try_from(plant.range.start)?..usize::try_from(plant.range.end)?)
+        .ok_or("invalid synthetic manifest")?;
+    let mut json_unicode = String::new();
+    let mut url_percent = String::new();
+    for byte in value {
+        write!(&mut json_unicode, "\\u{byte:04x}")?;
+        write!(&mut url_percent, "%{byte:02X}")?;
+    }
+    Ok(vec![
+        (
+            "json-unicode",
+            Zeroizing::new(format!("{{\"message\":\"{json_unicode}\"}}\n")),
+        ),
+        (
+            "url-percent",
+            Zeroizing::new(format!("https://example.invalid/?value={url_percent}\n")),
+        ),
+        (
+            "base64",
+            Zeroizing::new(format!("{{\"message\":\"{}\"}}\n", STANDARD.encode(value))),
+        ),
+    ])
+}
 
 pub(crate) fn corpus() -> (Zeroizing<Vec<u8>>, Vec<Plant>) {
     let mut input = Zeroizing::new(Vec::new());

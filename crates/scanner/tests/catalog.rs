@@ -11,7 +11,7 @@ use support::corpus;
 fn planted_and_benign_catalog() -> Result<(), Box<dyn std::error::Error>> {
     let scanner = Scanner::builtin(Limits::default())?;
     assert_eq!(scanner.rule_count(), 488);
-    assert_eq!(scanner.input_buffer_bytes(), 131_075);
+    assert_eq!(scanner.input_buffer_bytes(), 1_114_115);
     let (input, manifest) = corpus();
     let mut detected = BTreeMap::<String, Vec<std::ops::Range<u64>>>::new();
     scanner.scan(input.as_slice(), |finding| {
@@ -34,6 +34,24 @@ fn planted_and_benign_catalog() -> Result<(), Box<dyn std::error::Error>> {
     for fixture in support::BENIGN {
         let summary = scanner.scan(fixture.as_bytes(), |_| Ok(()))?;
         assert_eq!(summary.findings, 0, "unexpected benign finding count");
+    }
+    // Practical tool-result JSONL, including a near-1 MiB physical record. This
+    // exercises all 488 rules, not an easy-rule subset or a throughput claim.
+    for size in [100 * 1024, 1024 * 1024] {
+        let prefix = b"{\"type\":\"tool_result\",\"content\":\"";
+        let suffix = b"\"}\n";
+        let mut record = prefix.to_vec();
+        record.extend(std::iter::repeat_n(
+            b'x',
+            size - prefix.len() - suffix.len(),
+        ));
+        record.extend_from_slice(suffix);
+        assert_eq!(scanner.scan(record.as_slice(), |_| Ok(()))?.findings, 0);
+    }
+    // Known scope boundary: the wrapper does not decode opaque encoded values.
+    // Pin these gaps explicitly rather than treating direct-only recall as parity.
+    for (_, encoded) in support::encoding_variants()? {
+        assert_eq!(scanner.scan(encoded.as_bytes(), |_| Ok(()))?.findings, 0);
     }
     // Verification is a fresh in-process scan, never content-deduplicated away.
     assert!(scanner.scan(input.as_slice(), |_| Ok(()))?.findings >= manifest.len() as u64);

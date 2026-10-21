@@ -15,8 +15,8 @@ def main() -> None:
     root = Path("target/scanner-fixtures")
     planted = (root / "planted.txt").read_bytes()
     manifest = [line.split("\t") for line in (root / "manifest.tsv").read_text().splitlines()[1:]]
-    report = {"version": "3.99.2", "verification": False, "families": {}, "benign_detector_counts": {}}
-    for name in ("planted", "benign"):
+    report = {"version": "3.99.2", "verification": False, "families": {}, "benign_detector_counts": {}, "encoded_variants": {}}
+    for name in ("planted", "benign", "json-unicode", "url-percent", "base64"):
         command = [binary, "filesystem", "--no-update", "--no-verification", "--json", "--log-level=-1", "--concurrency=1", "--fail-on-scan-errors", str(root / (name + ".txt"))]
         # Results containing raw values remain only in this process, never files,
         # logs, exception text or CI artifacts. Do not echo subprocess errors.
@@ -29,12 +29,21 @@ def main() -> None:
             report["benign_detector_counts"] = dict(sorted(counts.items()))
             if counts:
                 raise ValueError("pinned comparison produced unexpected benign findings")
-        else:
+        elif name == "planted":
             report["planted_detector_counts"] = dict(sorted(counts.items()))
             for family, rule, start, end in manifest:
                 value = planted[int(start):int(end)]
                 recalled = any(value in item.get("Raw", "").encode() for item in results)
                 report["families"][family] = {"expected": 1, "trufflehog_recalled": int(recalled)}
+        else:
+            _, _, start, end = next(plant for plant in manifest if plant[0] == "github")
+            value = planted[int(start):int(end)]
+            recalled = any(value in item.get("Raw", "").encode() for item in results)
+            report["encoded_variants"][name] = {
+                "expected": 1, "trufflehog_recalled": int(recalled),
+                "trufflehog_detector_counts": dict(sorted(counts.items())),
+                "native_scope": "opaque encoding not decoded; zero native findings pinned by catalog test",
+            }
     # TH is a comparison, not the independent manifest gate. Misses are reported.
     destination = Path("target/scanner-parity.json")
     destination.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")

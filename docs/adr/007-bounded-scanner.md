@@ -30,8 +30,9 @@ needed. The catalog integration test shares one compiled instance across threads
 
 ## Budgets and boundary contract
 
-Defaults: reads 64 KiB, maximum **full expression** span 64 KiB, physical lines
-32 KiB excluding LF, findings 65,536 per input. Configured read/match limits cannot
+Defaults: reads 64 KiB, maximum **full expression** span 1 MiB, physical lines
+1 MiB minus one byte excluding LF (aligned with core's 1 MiB including LF),
+findings 65,536 per input. The fixed input allocation is 1,114,115 bytes per call. Configured read/match limits cannot
 exceed 1 MiB; rules cannot exceed 1,024. Any error blocks the entire input. Partial
 callbacks never authorize upload or deletion. The reader may enforce cancellation
 between bounded reads; consumers may reject findings. Interrupted I/O means retry.
@@ -97,10 +98,22 @@ never freed memory. No user callback executes inside native FFI.
 
 Matching conservatively reports syntax: online validation, high-level path/context/
 dependency suppression and lossy capture-map/filter construction are not enabled.
+No implicit decoder is enabled: opaque JSON Unicode escapes, percent-encoded
+credentials and base64 strings are not generally detected. Tests pin these gaps;
+the optional TruffleHog comparison reports the same encoded variants separately.
+A successful raw-byte scan does not certify decoded representations absent. The
+caller must not treat this as an equivalent replacement for all TH decoders.
+Core can replace JSON-escaped variants of a value found elsewhere, but that does
+not discover an exclusively encoded value. Broader decoding needs a separate
+bounded expansion/offset policy, not a silent catalog or hot-path change.
+
 The full 488-rule planted/benign test checks cloud, GitHub, GitLab, Slack, JWT,
 private-key and database spans independently. Actual core integration additionally
 checks an env-assignment plant, removes every planted value and rescans clean.
 Curated prose, code, URLs, configuration, curl and Unicode have zero findings.
+Full-catalog 100 KiB and near-1 MiB tool-result JSONL records also scan without
+findings using bounded memory. These are resource/usability tests, not throughput
+evidence or a claim that production records never exceed the configurable cap.
 Streaming tests cover all read splits, sliding frontiers, anchors, EOF exact/over
 budgets, UTF-8 splits, nongreedy repeated records, per-rule guard priority and
 cache exhaustion. Tests inspect zeroization and forbid Debug findings.

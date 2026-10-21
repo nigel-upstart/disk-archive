@@ -19,11 +19,16 @@ Linux)
 	command -v strace >/dev/null
 	# Separate namespace prevents egress; syscall trace also rejects attempted
 	# network calls, not merely successful connections. CI has passwordless sudo.
-	sudo -n unshare --net -- strace -f -qq -e trace=network -e raw=all -o "${PWD}/target/scanner-network.trace" "$binary" --exact planted_and_benign_catalog
-	if [[ -s target/scanner-network.trace ]]; then
-		printf 'scanner attempted a network syscall (trace retained under target)\n' >&2
-		exit 1
-	fi
+	sudo -n unshare --net -- strace -f -qq -e trace=network,execve,execveat -e raw=all -o "${PWD}/target/scanner-network.trace" "$binary" --exact planted_and_benign_catalog
+	python3 - <<'PY'
+from pathlib import Path
+lines = Path('target/scanner-network.trace').read_text().splitlines()
+# The audited binary itself is exec'd once by strace. No descendant execs or
+# network calls are permitted. raw=all records pointers, never argv/input bytes.
+if len(lines) != 1 or ' execve(' not in lines[0] or not lines[0].endswith(' = 0'):
+    raise SystemExit('scanner network/process audit failed (raw-pointer trace under target)')
+print('Native scanner syscall audit: network=0; hot-path subprocess execs=0')
+PY
 	;;
 Darwin)
 	# Local denial smoke; the Linux syscall audit is the stronger CI gate.
