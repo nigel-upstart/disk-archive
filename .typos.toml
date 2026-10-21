@@ -1,5 +1,12 @@
 [files]
-extend-exclude = ["Cargo.lock", "plan/", "legacy/", ".task-logs/", "target/"]
+extend-exclude = [
+  "Cargo.lock",
+  "plan/",
+  "legacy/",
+  ".task-logs/",
+  "target/",
+  "vendor/",
+]
 
 [default.extend-words]
 # Exact upstream detector/product names and native start-of-match terminology.

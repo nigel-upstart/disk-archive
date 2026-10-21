@@ -32,8 +32,10 @@ needed. The catalog integration test shares one compiled instance across threads
 
 Defaults: reads 64 KiB, maximum **full expression** span 1 MiB, physical lines
 1 MiB minus one byte excluding LF (aligned with core's 1 MiB including LF),
-findings 65,536 per input. The fixed input allocation is 1,114,115 bytes per call. Configured read/match limits cannot
-exceed 1 MiB; rules cannot exceed 1,024. Any error blocks the entire input. Partial
+findings 65,536 per input. The native input allocation is 1,114,115 bytes per call;
+encoded preflight additionally retains a fixed 1 MiB carrier plus bounded decoded
+buffers described below. Configured read/match limits cannot exceed 1 MiB; rules
+cannot exceed 1,024. Any error blocks the entire input. Partial
 callbacks never authorize upload or deletion. The reader may enforce cancellation
 between bounded reads; consumers may reject findings. Interrupted I/O means retry.
 
@@ -98,14 +100,32 @@ never freed memory. No user callback executes inside native FFI.
 
 Matching conservatively reports syntax: online validation, high-level path/context/
 dependency suppression and lossy capture-map/filter construction are not enabled.
-No implicit decoder is enabled: opaque JSON Unicode escapes, percent-encoded
-credentials and base64 strings are not generally detected. Tests pin these gaps;
-the optional TruffleHog comparison reports the same encoded variants separately.
-A successful raw-byte scan does not certify decoded representations absent. The
-caller must not treat this as an equivalent replacement for all TH decoders.
-Core can replace JSON-escaped variants of a value found elsewhere, but that does
-not discover an exclusively encoded value. Broader decoding needs a separate
-bounded expansion/offset policy, not a silent catalog or hot-path change.
+Known recoverable encoded secrets must not pass merely because direct scanning
+misses them. Preflight probes JSON Unicode/ordinary escapes, percent escapes,
+standard/URL-safe base64 candidates (at least eight carrier bytes, with or without
+padding), and BOM/NUL-indicated UTF16LE/BE at both byte alignments. Standard-library
+checked UTF16 conversion uses replacement separators for invalid units; it does
+not delete them. Base64-of-UTF16 and bounded combinations use the same probes.
+Every decoded candidate is searched by the **same native selector and original
+confirmation expressions**. A confirmed decoded secret returns static
+`UnsupportedEncoding`: G must retain the original and perform no upload. No
+incorrect raw-offset finding or partial decoded redaction is emitted. Issue #18
+retains offset-aware redaction work, not permission to upload known secrets.
+
+Carrier and decoded-buffer size is at most 1 MiB each. Plain records are checked
+at LF/EOF; NUL-bearing raw carriers retain adjacent physical lines together until
+EOF, blocking rather than truncating beyond the carrier cap. Each file allows
+262,144 decode attempts, 64 MiB of examined candidate bytes and four decoding
+levels. Exceeding any limit returns `Budget`, never clean success. Clean decoded
+values and ordinary base64-looking text are not blanket rejected. These bounded
+probes are not an arbitrary/universal decoder-completeness claim.
+
+All byte buffers and UTF16-unit vectors are zeroizing, sized before sensitive
+writes, and never reallocate. Base64 decodes into a fully initialized full-length
+buffer so partial writes on failure are wiped; unused initialized tails are
+explicitly wiped before truncation. JSON/UTF16 character conversion uses zeroizing
+UTF8 scratch without temporary decoded Strings or serde allocations. Opaque
+library scratch/registers remain outside the allocator-wide erasure claim.
 
 The full 488-rule planted/benign test checks cloud, GitHub, GitLab, Slack, JWT,
 private-key and database spans independently. Actual core integration additionally

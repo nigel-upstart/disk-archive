@@ -6,6 +6,7 @@ files:
   - "crates/**/*.rs"
 ignores:
   - "crates/archiver/src/blocking.rs"
+  - "crates/storage/src/blocking.rs"
 rule:
   all:
     - kind: call_expression

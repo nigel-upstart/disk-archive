@@ -42,7 +42,12 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         with:
-          key: native-v1-${{ runner.os }}-${{ runner.arch }}-workspace-debug-coverage-${{ github.ref }}-${{ steps.workspace-native.outputs.digest }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'mise.toml', 'crates/scanner/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', '.github/workflows/ci.yml') }}
+          key: native-v2-${{ runner.os }}-${{ runner.arch }}-workspace-debug-coverage-${{ github.ref }}-${{ steps.workspace-native.outputs.digest }}-${{ steps.workspace-native.outputs.native }}-${{ hashFiles('Cargo.toml', 'rust-toolchain.toml', 'mise.toml', 'crates/scanner/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', '.github/workflows/ci.yml') }}-${{ hashFiles('Cargo.lock') }}
+          # Reuse across Rust-only lock churn only on this ref or reviewed main.
+          # Compiler/CPU/profile/flags, native closure and build inputs stay exact.
+          restore-keys: |
+            native-v2-${{ runner.os }}-${{ runner.arch }}-workspace-debug-coverage-${{ github.ref }}-${{ steps.workspace-native.outputs.digest }}-${{ steps.workspace-native.outputs.native }}-${{ hashFiles('Cargo.toml', 'rust-toolchain.toml', 'mise.toml', 'crates/scanner/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', '.github/workflows/ci.yml') }}-
+            native-v2-${{ runner.os }}-${{ runner.arch }}-workspace-debug-coverage-refs/heads/main-${{ steps.workspace-native.outputs.digest }}-${{ steps.workspace-native.outputs.native }}-${{ hashFiles('Cargo.toml', 'rust-toolchain.toml', 'mise.toml', 'crates/scanner/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', '.github/workflows/ci.yml') }}-
           path: |
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
@@ -89,7 +94,12 @@ jobs:
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         with:
-          key: native-v1-${{ runner.os }}-${{ runner.arch }}-nightly-2026-10-20-release-asan-${{ github.ref }}-${{ steps.fuzz-native.outputs.digest }}-${{ hashFiles('fuzz/Cargo.lock', 'fuzz/Cargo.toml', 'Cargo.toml', 'crates/scanner/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', '.github/workflows/ci.yml') }}
+          key: native-v2-${{ runner.os }}-${{ runner.arch }}-nightly-2026-10-20-release-asan-${{ github.ref }}-${{ steps.fuzz-native.outputs.digest }}-${{ steps.fuzz-native.outputs.native }}-${{ hashFiles('fuzz/Cargo.toml', 'Cargo.toml', 'crates/scanner/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', '.github/workflows/ci.yml') }}-${{ hashFiles('fuzz/Cargo.lock') }}
+          # Reuse across Rust-only lock churn only on this ref or reviewed main.
+          # Compiler/CPU/profile/flags, native closure and build inputs stay exact.
+          restore-keys: |
+            native-v2-${{ runner.os }}-${{ runner.arch }}-nightly-2026-10-20-release-asan-${{ github.ref }}-${{ steps.fuzz-native.outputs.digest }}-${{ steps.fuzz-native.outputs.native }}-${{ hashFiles('fuzz/Cargo.toml', 'Cargo.toml', 'crates/scanner/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', '.github/workflows/ci.yml') }}-
+            native-v2-${{ runner.os }}-${{ runner.arch }}-nightly-2026-10-20-release-asan-refs/heads/main-${{ steps.fuzz-native.outputs.digest }}-${{ steps.fuzz-native.outputs.native }}-${{ hashFiles('fuzz/Cargo.toml', 'Cargo.toml', 'crates/scanner/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', '.github/workflows/ci.yml') }}-
           path: |
             ~/.cargo/registry/index
             ~/.cargo/registry/cache

@@ -21,7 +21,7 @@ pub(crate) const BENIGN: &[&str] = &[
     "Unicode prose: 秘密 means secret; λ is a Greek letter.\n",
 ];
 
-pub(crate) type EncodedFixtures = Vec<(&'static str, Zeroizing<String>)>;
+pub(crate) type EncodedFixtures = Vec<(&'static str, Zeroizing<Vec<u8>>)>;
 
 pub(crate) fn encoding_variants() -> Result<EncodedFixtures, Box<dyn std::error::Error>> {
     let (input, manifest) = corpus();
@@ -38,20 +38,43 @@ pub(crate) fn encoding_variants() -> Result<EncodedFixtures, Box<dyn std::error:
         write!(&mut json_unicode, "\\u{byte:04x}")?;
         write!(&mut url_percent, "%{byte:02X}")?;
     }
-    Ok(vec![
+    let mut carriers = vec![
         (
             "json-unicode",
-            Zeroizing::new(format!("{{\"message\":\"{json_unicode}\"}}\n")),
+            Zeroizing::new(format!("{{\"message\":\"{json_unicode}\"}}\n").into_bytes()),
         ),
         (
             "url-percent",
-            Zeroizing::new(format!("https://example.invalid/?value={url_percent}\n")),
+            Zeroizing::new(format!("https://example.invalid/?value={url_percent}\n").into_bytes()),
         ),
         (
             "base64",
-            Zeroizing::new(format!("{{\"message\":\"{}\"}}\n", STANDARD.encode(value))),
+            Zeroizing::new(
+                format!("{{\"message\":\"{}\"}}\n", STANDARD.encode(value)).into_bytes(),
+            ),
         ),
-    ])
+    ];
+    let text = std::str::from_utf8(value)?;
+    for (little, raw_name, b64_name, bom_name) in [
+        (true, "utf16le", "base64-utf16le", "utf16le-bom"),
+        (false, "utf16be", "base64-utf16be", "utf16be-bom"),
+    ] {
+        let mut raw = Zeroizing::new(Vec::with_capacity(2 * text.len() + 2));
+        for unit in text.encode_utf16() {
+            raw.extend_from_slice(&if little {
+                unit.to_le_bytes()
+            } else {
+                unit.to_be_bytes()
+            });
+        }
+        carriers.push((b64_name, Zeroizing::new(STANDARD.encode(&raw).into_bytes())));
+        carriers.push((raw_name, raw.clone()));
+        let mut bom = Zeroizing::new(Vec::with_capacity(raw.len() + 2));
+        bom.extend_from_slice(&if little { [0xff, 0xfe] } else { [0xfe, 0xff] });
+        bom.extend_from_slice(&raw);
+        carriers.push((bom_name, bom));
+    }
+    Ok(carriers)
 }
 
 pub(crate) fn corpus() -> (Zeroizing<Vec<u8>>, Vec<Plant>) {

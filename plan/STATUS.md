@@ -38,8 +38,9 @@ if the primary is unavailable; preserve task ownership and checkpoints across a
 provider switch. Never launch a duplicate worker to work around a transient error.
 
 F's immutable scanner API/catalog is Send+Sync; share one compiled catalog across
-bounded workers. Scratch/cache is per call. Raw-byte detection does not decode
-opaque JSON-Unicode/base64/percent encodings (#18). Issue #6 stays open for I's
+bounded workers. Scratch/cache is per call. Bounded encoded-content preflight blocks confirmed
+JSON-Unicode/base64/percent/UTF16 secrets; issue #18 retains offset-aware redaction,
+not permission for known-secret uploads. Issue #6 stays open for I's
 throughput/instruction evidence; its mirror remains after implementation merge.
 H/G own their interfaces; coordinate rather than editing another worker's files.
 

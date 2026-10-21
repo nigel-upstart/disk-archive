@@ -48,10 +48,13 @@ fn planted_and_benign_catalog() -> Result<(), Box<dyn std::error::Error>> {
         record.extend_from_slice(suffix);
         assert_eq!(scanner.scan(record.as_slice(), |_| Ok(()))?.findings, 0);
     }
-    // Known scope boundary: the wrapper does not decode opaque encoded values.
-    // Pin these gaps explicitly rather than treating direct-only recall as parity.
+    // Known legacy-decoder carriers cannot be certified clean. Offset-aware
+    // redaction is not required: static rejection retains the original in G.
     for (_, encoded) in support::encoding_variants()? {
-        assert_eq!(scanner.scan(encoded.as_bytes(), |_| Ok(()))?.findings, 0);
+        assert_eq!(
+            scanner.scan(encoded.as_slice(), |_| Ok(())),
+            Err(ScanError::UnsupportedEncoding)
+        );
     }
     // Verification is a fresh in-process scan, never content-deduplicated away.
     assert!(scanner.scan(input.as_slice(), |_| Ok(()))?.findings >= manifest.len() as u64);

@@ -1,0 +1,81 @@
+[package]
+name = "disk-archive-storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+test-support = ["dep:s3-mock-server", "dep:hyper", "dep:hyper-util"]
+
+[dependencies]
+hyper = { version = "1.9.0", features = ["http1", "server"], optional = true }
+hyper-util = { version = "0.1.20", features = [
+  "client-legacy",
+  "http1",
+  "server-auto",
+  "tokio",
+], optional = true }
+s3-mock-server = { version = "=0.1.0", git = "https://github.com/awslabs/aws-s3-transfer-manager-rs", rev = "dc391970cd36e0d6d6ed044dcb3351b26131e9be", optional = true }
+aws-config = { version = "1.13.0", default-features = false, features = [
+  "default-https-client",
+  "rt-tokio",
+  "sso",
+] }
+aws-sdk-s3 = { version = "1.153.0", default-features = false, features = [
+  "behavior-version-latest",
+  "default-https-client",
+  "http-1x",
+  "rt-tokio",
+] }
+aws-sdk-s3-transfer-manager = { version = "=0.3.1", git = "https://github.com/awslabs/aws-s3-transfer-manager-rs", rev = "dc391970cd36e0d6d6ed044dcb3351b26131e9be" }
+aws-smithy-http-client = { version = "1.5.1", features = [
+  "rustls-aws-lc",
+  "rt-tokio",
+] }
+base64 = "0.22.1"
+bytes = "1.12.1"
+crc = "3.4.0"
+disk-archive-verified = { version = "0.1.0", path = "../verified" }
+flate2 = "1.1.10"
+rustls = { version = "0.23.37", default-features = false, features = [
+  "aws_lc_rs",
+  "std",
+  "tls12",
+] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+tempfile = "3.27.0"
+tokio = { version = "1.54.0", features = [
+  "fs",
+  "io-util",
+  "macros",
+  "rt-multi-thread",
+  "sync",
+  "time",
+] }
+tokio-util = { version = "0.7.20", features = ["rt"] }
+zeroize = "1.9.1"
+
+[dev-dependencies]
+rcgen = { version = "0.14.10", default-features = false, features = [
+  "aws_lc_rs",
+  "pem",
+] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = [
+  "aws_lc_rs",
+  "tls12",
+] }
+hyper = { version = "1.9.0", features = ["http1", "server"] }
+hyper-util = { version = "0.1.20", features = [
+  "client-legacy",
+  "http1",
+  "server-auto",
+  "tokio",
+] }
+s3-mock-server = { version = "=0.1.0", git = "https://github.com/awslabs/aws-s3-transfer-manager-rs", rev = "dc391970cd36e0d6d6ed044dcb3351b26131e9be" }
+
+[lints]
+workspace = true

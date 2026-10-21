@@ -2,7 +2,8 @@
 set -euo pipefail
 case ${1:?gate required} in
 fmt)
-	cargo fmt --all --check
+	# The virtual root defaults to all own workspace members, excluding audited vendor.
+	cargo fmt --check
 	cargo fmt --manifest-path fuzz/Cargo.toml --check
 	taplo fmt --check
 	shfmt -d scripts/*.sh
@@ -30,7 +31,8 @@ supply-chain)
 	python3 scripts/policy.py exceptions
 	cargo deny check
 	cargo deny --manifest-path fuzz/Cargo.toml check
-	cargo machete
+	# Audit every own workspace package, not unchanged externally audited vendor internals.
+	cargo machete crates
 	;;
 secrets)
 	# Restore a partial commit's index ONLY for this repository's staged guards.

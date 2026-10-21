@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (name, encoded) in support::encoding_variants()? {
         std::fs::write(
             format!("target/scanner-fixtures/{name}.txt"),
-            encoded.as_bytes(),
+            encoded.as_slice(),
         )?;
     }
     Ok(())

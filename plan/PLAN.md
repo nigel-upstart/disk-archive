@@ -55,7 +55,8 @@ starts private and becomes **public** only after a history audit.
 ```
 crates/verified/   Verus kernels: state transitions + VerifiedUpload token, key encoding, needle replacement, PEM line state, age cutoff
 crates/core/       config, finding model, streaming redactor using the kernels, scanner integration
-crates/archiver/   bin: tokio pipeline, S3 store, SQLite state writer, CLI
+crates/storage/    source-bound SDK/TM adapter, bounded gzip spools, actual-checksum HEAD verification, synthetic HTTP/SigV4 fixture
+crates/archiver/   bin: tokio pipeline, SQLite state writer, CLI
 bench/             corpus generator, criterion + gungraun benches, perf-gate policy/baselines
 legacy/python/     sanitized legacy reference — temporary, removed once parity is proven
 plan/              this directory — temporary
@@ -103,12 +104,16 @@ parentheses). Use the `anthropic/` and `openai-codex/` providers, not Bedrock, f
 | Wave | ID | Work | Issues | Archetype | Model @ effort (fallback) | Status |
 | --- | --- | --- | --- | --- | --- | --- |
 | 3 | G | tokio pipeline, single SQLite writer task, cancellation and lock file, CLI (`--limit`, change-nothing `--dry-run`, `--workers`), manifest, end-to-end tests | #3 | median_repository_implementation | `anthropic/claude-opus-5-5` @ medium (`gpt-6.1-sol` @ high) | todo |
-| 3 | H | `SdkStore` behind `ObjectStore`, in-process S3 mock, streaming multipart via the transfer manager, checksum and HEAD verification, multipart abort on cancel | #4, #5 | median_repository_implementation | `anthropic/claude-opus-5-5` @ medium (`gpt-6.1-sol` @ high) | todo |
 | 3 | I | Perf harness: seeded corpus generator, criterion + gungraun benches, deterministic counters, statistical gate logic, record-only `perf` job | #7 (part) | terminal_heavy_implementation | `openai-codex/gpt-6.1-sol` @ high (`anthropic/claude-opus-5-5` @ high) | todo |
 | 4 | R | Independent read-only review, from a different vendor, of the delete-safety, redaction, and cancellation rules across the data plane; findings posted to the open PRs or new issues | — | code_review | `openai-codex/gpt-6-astra` @ high (`gpt-6.1-sol` @ medium) | todo |
 | 4 | J | Optional `profiling` feature and `task profile:*` targets | #8 | deliberate_tool_workflow | `openai-codex/gpt-6.1-sol` @ medium (`gpt-5.6-terra` @ high) | todo |
 | 4 | K | README usage, migration notes (old and new key layouts), final `AGENTS.md`, remove `legacy/python/` once parity is proven, remove `plan/` items that are done | — | deliberate_tool_workflow | `openai-codex/gpt-6.1-sol` @ medium (`gpt-5.6-terra` @ high) | todo |
 | 5 | Z | Pre-publish audit (read-only): gitleaks + trufflehog over the **entire history**, a history search for every local `.env` value and for account IDs and emails, commit-author check, confirmation that no state DBs, logs, archives, or `.env` files were ever committed, review of repo settings | — | highest_risk_advisory | `anthropic/claude-opus-5-5` @ max (`gpt-6-astra` @ high → `gpt-6.1-sol` @ max) | todo |
+
+H implementation lives in `crates/storage` and [docs/storage.md](../docs/storage.md).
+Issues #4/#5 retain external real-S3, corporate-proxy and performance acceptance; implementation
+merge is not issue closure. Approved audited vendor patches are tracked in
+[docs/dependencies.md](../docs/dependencies.md), not a general dependency-policy exemption.
 
 ### Dependencies between waves
 

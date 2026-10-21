@@ -9,8 +9,14 @@ if [[ ${GITHUB_ACTIONS-} == true && ${RUNNER_ENVIRONMENT-} == github-hosted && $
 	sudo -n rm -rf -- /usr/local/lib/android
 fi
 case ${1:?workspace or fuzz required} in
-workspace) compiler=(rustc) ;;
-fuzz) compiler=(rustc +nightly-2026-10-20) ;;
+workspace)
+	compiler=(rustc)
+	lock=Cargo.lock
+	;;
+fuzz)
+	compiler=(rustc +nightly-2026-10-20)
+	lock=fuzz/Cargo.lock
+	;;
 *) exit 2 ;;
 esac
 digest=$(
@@ -21,7 +27,9 @@ digest=$(
 		c++ --version
 		cmake --version
 		LC_ALL=C lscpu | awk -F: '/^(Architecture|Vendor ID|Model name|Flags):/ {gsub(/[[:space:]]+/, " ", $2); print $1 ":" $2}'
-		printf '%s\n' "${RUSTFLAGS-}" "${CFLAGS-}" "${CXXFLAGS-}" "${VECTORSCAN_OFFLINE-}"
+		printf '%s\n' "${RUSTFLAGS-}" "${CARGO_ENCODED_RUSTFLAGS-}" "${CFLAGS-}" "${CXXFLAGS-}" "${VECTORSCAN_OFFLINE-}"
 	} | sha256sum | cut -d ' ' -f 1
 )
 printf 'digest=%s\n' "$digest" >>"${GITHUB_OUTPUT:?GitHub output file required}"
+native=$(python3 scripts/ci-cache-native.py "$lock")
+printf 'native=%s\n' "$native" >>"$GITHUB_OUTPUT"

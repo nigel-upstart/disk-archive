@@ -1,5 +1,6 @@
 """Synthetic-only tests for the tooling gates; never inspect runtime data."""
 
+import copy
 import datetime
 import importlib.util
 import json
@@ -16,6 +17,9 @@ ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("policy", ROOT / "scripts/policy.py")
 policy = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(policy)
+NATIVE_SPEC = importlib.util.spec_from_file_location("cache_native", ROOT / "scripts/ci-cache-native.py")
+cache_native = importlib.util.module_from_spec(NATIVE_SPEC)
+NATIVE_SPEC.loader.exec_module(cache_native)
 
 
 def isolated_git_environment():
@@ -126,11 +130,46 @@ class PolicyTests(unittest.TestCase):
     def test_metadata_checks_only_verified_package(self):
         metadata = {"packages": [], "resolve": {"nodes": []}}
         isolated = {"packages": [{"manifest_path": "/unrelated/Cargo.toml", "dependencies": ["allowed"]}, {"manifest_path": str(Path("crates/verified/Cargo.toml").resolve()), "dependencies": []}]}
-        with patch.object(policy.pathlib.Path, "glob", return_value=[]), patch.object(policy, "check_manifest"), patch.object(policy.pathlib.Path, "exists", return_value=True), patch.object(policy.subprocess, "check_output", side_effect=[json.dumps(metadata).encode(), json.dumps(isolated).encode()]):
+        with patch.object(policy.pathlib.Path, "glob", return_value=[]), patch.object(policy, "check_manifest"), patch.object(policy, "check_vendor"), patch.object(policy.pathlib.Path, "exists", return_value=True), patch.object(policy.subprocess, "check_output", side_effect=[json.dumps(metadata).encode(), json.dumps(isolated).encode()]):
             policy.check_workspace()
 
 
 class CacheKeyTests(unittest.TestCase):
+    def test_native_closure_allows_only_unrelated_lock_churn(self):
+        lock = {"package": [
+            {"name": "kingfisher-vectorscan", "version": "0.1.1", "checksum": "wrapper", "dependencies": ["kingfisher-vectorscan-sys"]},
+            {"name": "kingfisher-vectorscan-sys", "version": "0.1.1", "checksum": "native", "dependencies": ["cc"]},
+            {"name": "cc", "version": "1.0.0", "checksum": "build", "dependencies": ["shlex"]},
+            {"name": "shlex", "version": "1.0.0", "checksum": "transitive"},
+            {"name": "application-only", "version": "1.0.0", "checksum": "unrelated"},
+        ]}
+        original = cache_native.fingerprint(lock)
+        lock["package"][-1]["checksum"] = "changed"
+        self.assertEqual(original, cache_native.fingerprint(lock))
+        for index in range(4):
+            changed = copy.deepcopy(lock)
+            changed["package"][index]["checksum"] += "change"
+            self.assertNotEqual(original, cache_native.fingerprint(changed))
+        for broken in [{"package": []}, {"package": lock["package"] + [lock["package"][2]]}, {"package": lock["package"][:3]}]:
+            with self.assertRaises(ValueError):
+                cache_native.fingerprint(broken)
+
+    def test_fallback_is_ref_scoped_and_keeps_native_compatibility_inputs(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+        blocks = workflow.split("restore-keys: |\n")[1:]
+        self.assertEqual(len(blocks), 2)
+        for block in blocks:
+            lines = block.splitlines()[:2]
+            self.assertIn("${{ github.ref }}", lines[0])
+            self.assertIn("refs/heads/main", lines[1])
+            for line in lines:
+                self.assertIn("outputs.digest", line)
+                self.assertIn("outputs.native", line)
+                self.assertIn("hashFiles(", line)
+                self.assertNotIn("Cargo.lock", line)
+                self.assertIn("CMakeLists.txt", line)
+                self.assertIn("crates/scanner/Cargo.toml", line)
+
     def test_dynamic_cpu_fields_do_not_break_safe_cache_reuse(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -150,7 +189,7 @@ class CacheKeyTests(unittest.TestCase):
             environment = {**os.environ, "PATH": str(binary) + os.pathsep + os.environ["PATH"], "GITHUB_OUTPUT": str(output), "MOCK_FLAGS": "avx2 sse4_2"}
             def digest(mhz, flags):
                 output.write_text("")
-                subprocess.run(["bash", str(ROOT / "scripts/ci-cache-key.sh"), "workspace"], env={**environment, "MOCK_MHZ": mhz, "MOCK_FLAGS": flags}, check=True)
+                subprocess.run(["bash", str(ROOT / "scripts/ci-cache-key.sh"), "workspace"], env={**environment, "MOCK_MHZ": mhz, "MOCK_FLAGS": flags}, cwd=ROOT, check=True)
                 return output.read_text()
             self.assertEqual(digest("1000", "avx2 sse4_2"), digest("3200", "avx2 sse4_2"))
             self.assertNotEqual(digest("1000", "avx2 sse4_2"), digest("1000", "sse4_2"))

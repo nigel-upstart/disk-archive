@@ -659,6 +659,7 @@ dependencies = [
 name = "disk-archive-scanner"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "kingfisher-rules",
  "kingfisher-scanner",
  "kingfisher-vectorscan",

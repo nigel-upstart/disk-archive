@@ -1,0 +1,25 @@
+{
+  "archive": "https://static.crates.io/crates/aws-smithy-dns/aws-smithy-dns-0.2.3.crate",
+  "archive_sha256": "3aec766384ece7e3e9ac462683a81a0c3803a1169900e071355d33c194d71fab",
+  "omitted": [
+    "Cargo.lock"
+  ],
+  "patch_notes": "Only normalized manifest hickory-resolver version and hickory.rs API compatibility: runtime provider, UDP/TCP nameservers and ports, u64 cache size, fallible builder. Public Smithy API unchanged. Upstream panic-style constructors retained.",
+  "patch_sha256": "b697499de0d284b20cc9a0254e3a8ea48d352d881430824448080b574b056535",
+  "patched_files": {
+    "Cargo.toml": "35211a47ac93be2bdc1ec01009a521b747dfe2241da2a378b9b38635b319b88f",
+    "src/hickory.rs": "3009beaba0dd9ac8139eecbd98b13c7a16ad2ec37dbd164acff4fdef862a33c2"
+  },
+  "purpose": "RUSTSEC-2026-0118/0119: replace vulnerable Hickory 0.25 with patched 0.26 API; no advisory waiver.",
+  "source_files": {
+    "Cargo.toml": "119f5278801dbf495139c2f7745edb170cdd93fdca4c4d1b78dae37de15de59c",
+    "Cargo.toml.orig": "daa5d4114f11d4697724bf7e3879f0c6cb97149723a970eb968476d26909edcc",
+    "LICENSE": "09e8a9bcec8067104652c168685ab0931e7868f9c8284b66f5ae6edae5f1130b",
+    "README.md": "1c754087fc9490b2ca1f6ae0f4121dc6252cb3f6a39012263d1251ecd6523139",
+    "src/hickory.rs": "32779ae2052cb1fda3aa3e34faed14750d32b00fa8a5c404f70ba0eb3a16f4eb",
+    "src/lib.rs": "dd5d42ab64a5999aef830361db5f61b15545282dffc021082dada22b4cf727ff",
+    "tests/hickory.rs": "2cb4f15cbf95d7ffc5970cb72392c5d718b3b2fab986bfd5f44c9c94249bdcf7"
+  },
+  "upstream": "https://github.com/awslabs/smithy-rs",
+  "version": "0.2.3"
+}

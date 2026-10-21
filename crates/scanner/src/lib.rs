@@ -1,10 +1,12 @@
 //! In-process, bounded byte scanning with a pinned Kingfisher rule database.
 //!
-//! No high-level `Vec<Finding>` API, credential validators, decoding, archives,
-//! filesystem access, logging, or subprocesses are used. Findings borrow a fixed
+//! No high-level `Vec<Finding>` API, credential validators, archives, filesystem
+//! access, logging, or subprocesses are used. Bounded encoded-carrier preflight
+//! blocks confirmed decoded secrets; it never emits unsafe raw-offset findings. Findings borrow a fixed
 //! zeroizing window and cannot outlive their callback. Only a successful return
 //! certifies the entire reader was scanned; any error invalidates partial output.
 //! Run this synchronous CPU-bound interface on the application's bounded pool.
+mod encoding;
 mod guard;
 
 use std::{io::Read, ops::Range};
@@ -27,6 +29,8 @@ pub enum ScanError {
     GuardCompile,
     /// Input cannot be safely represented by this scanner/redactor contract.
     UnsupportedInput,
+    /// A decoded secret or malformed Unicode carrier cannot be safely redacted.
+    UnsupportedEncoding,
     /// An input record exceeds the configured bound.
     LineTooLarge,
     /// A match or still-live match prefix exceeds the configured bound.
@@ -267,6 +271,7 @@ impl Scanner {
             .guard
             .as_ref()
             .map(|guard| guard.stream(self.limits.match_bytes));
+        let mut preflight = Some(encoding::Preflight::new(self)?);
         let mut window = Window::new(self.limits);
         let mut state = StreamState::new(self.database.num_rules());
         loop {
@@ -299,6 +304,12 @@ impl Scanner {
                 .get(old_len..window.used)
                 .ok_or(ScanError::Budget)?;
             state.advance(new_bytes, self.limits)?;
+            if let Some(check) = preflight.as_mut() {
+                check.advance(new_bytes)?;
+            }
+            if eof && let Some(check) = preflight.take() {
+                check.finish()?;
+            }
             if let Some(stream) = guard_stream.as_mut() {
                 stream.advance(new_bytes)?;
             }
@@ -336,29 +347,7 @@ impl Scanner {
         F: FnMut(Finding<'_>) -> Result<(), ScanError>,
     {
         let bytes = window.bytes.get(..window.used).ok_or(ScanError::Budget)?;
-        let mut selected = vec![false; self.database.num_rules()];
-        let mut invalid_id = false;
-        let mut candidate_events = 0_u32;
-        native
-            .scan(bytes, |id, _, _, _| {
-                candidate_events += 1;
-                if candidate_events > 1_048_576 {
-                    return Scan::Terminate;
-                }
-                if let Some(flag) = selected.get_mut(id as usize) {
-                    *flag = true;
-                } else {
-                    invalid_id = true;
-                }
-                Scan::Continue
-            })
-            .map_err(|_| ScanError::Engine)?;
-        if invalid_id {
-            return Err(ScanError::Engine);
-        }
-        if candidate_events > 1_048_576 {
-            return Err(ScanError::Budget);
-        }
+        let selected = self.selected_rules(native, bytes)?;
         for (index, (regex, rule)) in self
             .database
             .anchored_regexes()
@@ -428,6 +417,54 @@ impl Scanner {
             }
         }
         Ok(())
+    }
+
+    // Whole bounded decoded candidates need no streaming offset projection.
+    // The native selector and original confirmation expressions are identical
+    // to direct scanning; a decoder is never itself a credential detector.
+    fn confirm_decoded(
+        &self,
+        native: &mut BlockScanner<'_>,
+        bytes: &[u8],
+    ) -> Result<bool, ScanError> {
+        let selected = self.selected_rules(native, bytes)?;
+        for (index, regex) in self.database.anchored_regexes().iter().enumerate() {
+            if selected.get(index).copied().ok_or(ScanError::Engine)? && regex.is_match(bytes) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn selected_rules(
+        &self,
+        native: &mut BlockScanner<'_>,
+        bytes: &[u8],
+    ) -> Result<Vec<bool>, ScanError> {
+        let mut selected = vec![false; self.database.num_rules()];
+        let mut invalid_id = false;
+        let mut candidate_events = 0_u32;
+        native
+            .scan(bytes, |id, _, _, _| {
+                candidate_events += 1;
+                if candidate_events > 1_048_576 {
+                    return Scan::Terminate;
+                }
+                if let Some(flag) = selected.get_mut(id as usize) {
+                    *flag = true;
+                } else {
+                    invalid_id = true;
+                }
+                Scan::Continue
+            })
+            .map_err(|_| ScanError::Engine)?;
+        if invalid_id {
+            return Err(ScanError::Engine);
+        }
+        if candidate_events > 1_048_576 {
+            return Err(ScanError::Budget);
+        }
+        Ok(selected)
     }
 }
 

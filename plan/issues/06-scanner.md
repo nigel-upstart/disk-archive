@@ -53,10 +53,11 @@ bounds, zeroization and real core redaction/rescan tests pass locally. Mandatory
 Linux syscall and cargo-fuzz gates run in CI; do not infer their result from this note.
 
 Pinned TH 3.99.2 comparison reports direct synthetic cloud/JWT/private-key/env
-misses separately; native/core handle these direct plants. Opaque JSON-Unicode and
-base64 variants are TH-detected but not decoded by the native wrapper; percent-
-encoded coverage is also not claimed. ADR007 records this scope limitation.
-This is not a universal no-miss or decoded-representation safety claim.
+misses separately; native/core handle these direct plants. Bounded preflight
+rescans JSON-Unicode, percent, UTF8/base64 and raw/base64 UTF16LE/BE carriers with
+the same catalog. Confirmed decoded secrets block/retain instead of inventing raw
+offsets. Budgets fail closed; issue #18 retains offset-aware redaction follow-up.
+ADR007 states probe limits, not universal decoder completeness.
 
 **Issue #6 remains open:** throughput and instruction-count acceptance is explicitly
 pending the separately assigned issue #7 perf harness. Implementation merge must

@@ -1,4 +1,5 @@
 """Bounded full-catalog fuzz run. Never forward fuzzer output or crash input."""
+import base64
 from pathlib import Path
 import re
 import subprocess
@@ -16,6 +17,15 @@ seeds = [
     bytes(range(256)),
     b"ordinary\n" * 8192,
 ]
+token = "ghp_" + (mixed * 2)[:36]
+seeds.extend([
+    "".join(f"\\u{ord(byte):04x}" for byte in token).encode(),
+    "".join(f"%{ord(byte):02x}" for byte in token).encode(),
+    base64.b64encode(token.encode()),
+])
+for encoding in ("utf-16-le", "utf-16-be"):
+    raw = token.encode(encoding)
+    seeds.extend([raw, base64.b64encode(raw)])
 for index, seed in enumerate(seeds):
     (corpus / str(index)).write_bytes(seed)
 

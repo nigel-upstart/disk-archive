@@ -47,6 +47,7 @@ multiple-versions = "deny"
 wildcards = "deny"
 # Add only explicitly reviewed duplicate versions, with an explanation and issue.
 skip = [
+  { crate = "untrusted@0.7.1", reason = "Owner: maintainer; #17; expires 2026-11-21; Kingfisher aws-lc-rs parser API vs SDK rustls-webpki parser API" },
   { crate = "base64@0.22.1", reason = "Owner: maintainer; #17; expires 2026-11-21; tiktoken build API vs catalog/pem API" },
   { crate = "block-buffer@0.10.4", reason = "Owner: maintainer; #17; expires 2026-11-21; gix/native digest vs catalog digest" },
   { crate = "cpufeatures@0.2.17", reason = "Owner: maintainer; #17; expires 2026-11-21; gix/native SHA vs catalog SHA/rand" },
@@ -77,6 +78,8 @@ skip = [
   { crate = "windows_x86_64_gnullvm@0.48.5", reason = "Owner: maintainer; #17; expires 2026-11-21; windows-targets 0.48/0.52 ABI" },
   { crate = "windows_x86_64_msvc@0.48.5", reason = "Owner: maintainer; #17; expires 2026-11-21; windows-targets 0.48/0.52 ABI" },
   { crate = "winnow@0.7.15", reason = "Owner: maintainer; #17; expires 2026-11-21; tokei toml_edit vs catalog TOML" },
+  { crate = "core-foundation@0.9.4", reason = "Owner: maintainer; #5; expires 2026-11-21; Hickory system-configuration macOS DNS ABI vs rustls-native-certs security-framework ABI" },
+  { crate = "crypto-bigint@0.5.5", reason = "Owner: maintainer; #5; expires 2026-11-21; AWS SigV4 vs current ECDSA API" },
 ]
 
 [sources]
