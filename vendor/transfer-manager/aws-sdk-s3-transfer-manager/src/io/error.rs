@@ -1,0 +1,80 @@
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+use std::error::Error as StdError;
+use std::fmt;
+use std::fmt::Formatter;
+use std::io::Error as StdIoError;
+use tokio::task::JoinError;
+
+#[derive(Debug)]
+pub(crate) enum ErrorKind {
+    OffsetGreaterThanFileSize,
+    OffsetNotAlignedWithPartNumber(u64, u64),
+    TaskFailed(JoinError),
+    IoError(StdIoError),
+}
+
+/// An I/O related error occurred
+#[derive(Debug)]
+pub struct Error {
+    kind: ErrorKind,
+}
+
+impl Error {
+    pub(crate) fn offset_not_aligned_with_part_number(offset: u64, part_number: u64) -> Error {
+        ErrorKind::OffsetNotAlignedWithPartNumber(offset, part_number).into()
+    }
+}
+impl From<ErrorKind> for Error {
+    fn from(kind: ErrorKind) -> Self {
+        Self { kind }
+    }
+}
+
+impl From<StdIoError> for Error {
+    fn from(err: StdIoError) -> Self {
+        ErrorKind::IoError(err).into()
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            ErrorKind::OffsetGreaterThanFileSize => write!(
+                f,
+                "offset must be less than or equal to file size but was greater than"
+            ),
+            ErrorKind::OffsetNotAlignedWithPartNumber(offset, part_number) => write!(
+                f,
+                "offset {} is not aligned with part number {}",
+                offset, part_number,
+            ),
+            ErrorKind::IoError(_) => write!(f, "I/O error"),
+            ErrorKind::TaskFailed(_) => write!(f, "task failed"),
+        }
+    }
+}
+
+impl StdError for Error {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match &self.kind {
+            ErrorKind::OffsetGreaterThanFileSize => None,
+            ErrorKind::OffsetNotAlignedWithPartNumber(_, _) => None,
+            ErrorKind::IoError(err) => Some(err as _),
+            ErrorKind::TaskFailed(err) => Some(err as _),
+        }
+    }
+}
+impl From<Error> for StdIoError {
+    fn from(err: Error) -> Self {
+        StdIoError::other(err)
+    }
+}
+
+impl From<JoinError> for Error {
+    fn from(value: JoinError) -> Self {
+        ErrorKind::TaskFailed(value).into()
+    }
+}
