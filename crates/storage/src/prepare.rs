@@ -160,6 +160,15 @@ impl UploadPreparer {
             return Err(StoreError::Budget);
         }
         self.account_existing_spools(cancel.clone()).await?;
+        // Orphan reservations are permanent for this preparer's lifetime. Only live
+        // uploads can release capacity: never queue a request they cannot satisfy.
+        let existing = self.existing.get().ok_or(StoreError::Worker)?;
+        let usable_units = (self.options.disk_budget / DISK_UNIT)
+            .checked_sub(u64::try_from(existing.num_permits()).map_err(|_| StoreError::Budget)?)
+            .ok_or(StoreError::Budget)?;
+        if units > usable_units {
+            return Err(StoreError::Budget);
+        }
         let permit = tokio::select! {
             biased;
             () = cancel.cancelled() => return Err(StoreError::Cancelled),

@@ -22,7 +22,10 @@ cannot starve the first upload's real final-hash/kernel authorization step.
 Under the exclusive Rust work-directory lock, `account_existing_spools` charges preexisting
 `archive-*.gz` files against the same quota once across all preparer clones. Preparation invokes
 this lazily if startup did not. Per-file sizes round up to quota units; symlinks, non-regular entries
-and over-budget leftovers fail closed. No leftover is deleted automatically. Reconcile crash
+and over-budget leftovers fail closed. Requests larger than total quota minus the permanent
+leftover reservation return `Budget` before waiting; only temporary live-upload contention waits.
+Full-orphan and partial-remainder timeout regressions cover this resume/backpressure boundary.
+No leftover is deleted automatically. Reconcile crash
 artifacts explicitly before reclaiming their quota; restart the preparer after that reconciliation.
 
 One shared SDK client supplies adaptive retries (eight attempts), explicit connect/attempt/overall
