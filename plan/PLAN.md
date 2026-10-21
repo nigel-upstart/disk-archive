@@ -19,7 +19,7 @@ starts private and becomes **public** only after a history audit.
 | Secret scanning | An in-process Rust scanner (#6). Try the Kingfisher library first; if that fails, build an in-house `RegexSet` + `aho-corasick` engine over vendored rules. `trufflehog` remains only as an optional cross-check. |
 | S3 keys | **Fix the legacy collision.** Legacy keys strip every leading `.` from the home-relative path, so `~/.x/f` and `~/x/f` map to the same key. The new layout must be injective, and Verus must prove it. Old and new archives may coexist under different buckets or prefixes; migrating later is fine. |
 | `--dry-run` | **Changes nothing**: no in-place redaction, upload, or delete. It reports what would happen. |
-| Config | Only `DISK_ARCHIVE_*` env vars and `.env` (gitignored); `.env.example` holds placeholders only. Bucket and prefix are required and have no defaults, so the tool refuses to run without them. Lookup order: `--env-file` → `$XDG_CONFIG_HOME/disk-archive/.env` → `./.env`. |
+| Config | Application-specific settings use only `DISK_ARCHIVE_*` env vars and `.env` (gitignored). Standard AWS credential/profile/region providers and the `AWS_CA_BUNDLE` fallback remain supported per #4, except `credential_process` is excluded. `.env.example` holds placeholders only. Bucket and prefix are required and have no defaults, so the tool refuses to run without them. Lookup order: `--env-file` → `$XDG_CONFIG_HOME/disk-archive/.env` → `./.env`. |
 | License | MIT. |
 | Commit identity | GitHub noreply address, set in repo-local git config. |
 | GitHub Actions | Pin by commit SHA with a `# vX.Y.Z` comment. Check current versions with `gh` and never assume one. |
