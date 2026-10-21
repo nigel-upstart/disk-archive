@@ -11,8 +11,9 @@
    ADR, or the code), fix it in the same PR or `git rm` it. Never leave stale guidance behind.
 3. **Durable decisions move out.** Anything that should outlive implementation goes into
    `docs/adr/`, `docs/design.md`, `AGENTS.md`, or `README.md` before its plan entry is deleted.
-4. **The directory goes away.** When epic #1 closes and `PLAN.md` has no open rows, delete `plan/`
-   entirely, and do it before or as part of the final pre-publish audit.
+4. **The directory goes away before publication.** Delete `plan/` entirely before or as part of
+   the final private pre-publish cleanup/audit. Do not wait for epic #1 to close: its #7 baseline
+   intentionally follows publication. Keep all remaining work in the authoritative GitHub issues.
 5. **No user-specific values.** The repository will be public. Bucket names, profiles, account IDs,
    emails, and home-directory paths belong only in a local, gitignored `.env`.
 

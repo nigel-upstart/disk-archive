@@ -2,7 +2,7 @@
 
 # #3: Adopt tokio and convert the staged pipeline to async
 
-Part of #1. **Blocked by** #2.
+Part of #1. **Blocked by** #2. Merge the pipeline implementation after #6 and the shared `ObjectStore`/in-process S3 mock seam are available. That implementation merge unlocks dependent work in #4/#7/#8; keep this issue open until #7's record-only performance evidence and #8's profiling validation satisfy the final acceptance criteria. Dependent implementations must not wait for this issue to close.
 
 ## Scope
 

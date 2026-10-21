@@ -2,7 +2,7 @@
 
 # #4: S3 client via aws-sdk-s3 + aws-config (profiles, SSO, retries, corporate CA)
 
-Part of #1. **Blocked by** #2 and #3.
+Part of #1. **Blocked by** #2. Land the shared `ObjectStore`/in-process S3 mock seam early for #3's tests; complete production pipeline integration after #3's implementation merges, without waiting for #3's final profiling/performance acceptance or issue closure.
 
 ## Scope
 

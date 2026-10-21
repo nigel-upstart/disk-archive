@@ -121,15 +121,21 @@ parentheses). Use the `anthropic/` and `openai-codex/` providers, not Bedrock, f
 - **Wave 1:** merge A → B → P.
 - **Wave 2:** starts once B and P are merged. D, E, and F own separate crates. D tests against
   P's reference kernels while E replaces them with verified versions.
-- **Wave 3:** starts once D and E are merged. F must be merged before G's end-to-end tests use the
-  in-process scanner.
-- **Wave 4:** starts once G and H are merged.
-- **Wave 5, after audit Z:** with the owner's explicit approval:
+- **Wave 3:** starts once D and E are merged. H first lands the `ObjectStore` test interface and
+  in-process S3 mock seam so G can test without waiting for H's production SDK integration.
+  F must be merged before G's end-to-end tests use the in-process scanner. G's implementation
+  merge unlocks H's production integration and later profiling; it does **not** close #3.
+  Keep #3's final profiling/performance acceptance open until I/J supply the evidence. Issues
+  #4/#7/#8 do not require #3 to close before their implementation can proceed.
+- **Wave 4:** starts once G and H are merged. I/J results complete #3's remaining acceptance;
+  #7 stays open for its post-publication baseline.
+- **Before publication:** delete `plan/` in a private cleanup PR before or as part of audit Z.
+  Do not wait for epic #1 or #7 to close; their remaining baseline/closure work lives in GitHub.
+- **Wave 5, after cleanup and audit Z:** with the owner's explicit approval:
   - `gh repo edit --visibility public --accept-visibility-change-consequences`
   - enable secret scanning and push protection
   - add a branch ruleset that requires CI, including `perf`
   - **record the initial perf baseline** (the last item of #7)
-  - delete `plan/`
 - **Real-S3 smoke test (needs the owner's approval, any time after H):** synthetic roots, a
   dedicated test prefix, and never the real log roots while another archiver is running against
   them.

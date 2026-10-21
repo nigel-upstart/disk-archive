@@ -1,8 +1,8 @@
-<!-- Mirror of https://github.com/nigel-upstart/disk-archive/issues/8 as opened. The issue is the source of truth; git rm this file when #8 closes or if it drifts. -->
+<!-- Mirror of https://github.com/nigel-upstart/disk-archive/issues/8 (synchronized during PR #9). The issue is the source of truth; git rm this file when #8 closes or if it drifts. -->
 
 # #8: Optional profiling build (cargo feature `profiling`)
 
-Part of #1. **Blocked by** #3.
+Part of #1. **Blocked by** #2. Profiling the pipeline starts after #3's implementation merges and the production S3 integration is available, not after #3 closes. This issue provides evidence for #3's final profiling acceptance, so issue closure cannot be its prerequisite.
 
 ## Scope
 

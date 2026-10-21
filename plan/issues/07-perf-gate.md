@@ -2,7 +2,7 @@
 
 # #7: Permanent performance regression gate on fixed-size GitHub-hosted runners
 
-Part of #1. Micro-benchmarks can start as soon as the kernels exist. End-to-end metrics depend on #3, #4, #5 and #6.
+Part of #1. Micro-benchmarks can start as soon as the kernels exist. End-to-end metrics depend on the implementations from #3, #4, #5 and #6, not on #3's issue closure. Record-only results help complete #3's acceptance; this issue stays open for the post-publication baseline.
 
 ## Goal
 
