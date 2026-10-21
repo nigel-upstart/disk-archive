@@ -1,0 +1,6 @@
+id: delete-stage-only
+valid:
+  - "fn f() { verify_upload(); }"
+invalid:
+  - "fn f() { std::fs::remove_file(path); }"
+  - "async fn f() { tokio::fs::remove_file(path).await; }"

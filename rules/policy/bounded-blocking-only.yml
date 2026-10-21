@@ -1,0 +1,12 @@
+id: bounded-blocking-only
+language: Rust
+severity: error
+message: spawn_blocking is allowed only in the bounded pool wrapper.
+files:
+  - "crates/**/*.rs"
+ignores:
+  - "crates/archiver/src/blocking.rs"
+rule:
+  all:
+    - kind: call_expression
+    - regex: '\bspawn_blocking\s*\('

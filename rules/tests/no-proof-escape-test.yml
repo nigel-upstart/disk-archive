@@ -1,0 +1,7 @@
+id: no-proof-escape
+valid:
+  - "fn f() { assert(true); }"
+invalid:
+  - "fn f() { assume(true); }"
+  - "#[verifier::external_body] fn f() {}"
+  - "fn f() { admit(); }"

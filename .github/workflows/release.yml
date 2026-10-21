@@ -1,0 +1,50 @@
+name: Release SBOM
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install pinned workspace Rust
+        run: |
+          pin=$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')
+          rustup toolchain install "$pin" --profile minimal --component clippy,rustfmt,llvm-tools-preview
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          cache: false
+      - name: Install isolated Verus
+        run: |
+          if [[ -f scripts/verus-install.sh ]]; then
+            bash scripts/verus-install.sh
+          fi
+      - run: task check
+      - run: cargo build --release --locked --package disk-archive
+      - uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: target/release/disk-archive
+          sbom-path: target/sbom/disk-archive.cdx.json
+      - name: Attach binary and all member SBOMs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" target/sbom/*.cdx.json target/release/disk-archive --clobber
+          else
+            gh release create "$RELEASE_TAG" target/sbom/*.cdx.json target/release/disk-archive --verify-tag --generate-notes
+          fi

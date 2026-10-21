@@ -1,0 +1,7 @@
+id: env-in-config-only
+valid:
+  - "fn f(config: Config) {}"
+invalid:
+  - "fn f() { std::env::var(\"HOME\"); }"
+  - "use std::env;"
+  - "fn f() { env::var_os(\"HOME\"); }"

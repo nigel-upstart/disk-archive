@@ -1,0 +1,10 @@
+id: no-s3-literals
+language: Rust
+severity: error
+message: Bucket/prefix configuration must not be hard-coded.
+files:
+  - "crates/**/*.rs"
+rule:
+  all:
+    - kind: string_literal
+    - regex: 's3://'

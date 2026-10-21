@@ -1,0 +1,5 @@
+id: bounded-blocking-only
+valid:
+  - "fn f() { pool.run(work); }"
+invalid:
+  - "fn f() { tokio::task::spawn_blocking(work); }"

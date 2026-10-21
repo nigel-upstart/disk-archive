@@ -1,0 +1,20 @@
+id: no-proof-escape
+snapshots:
+  "#[verifier::external_body] fn f() {}":
+    labels:
+    - source: "#[verifier::external_body]"
+      style: primary
+      start: 0
+      end: 26
+  "fn f() { admit(); }":
+    labels:
+    - source: admit()
+      style: primary
+      start: 9
+      end: 16
+  "fn f() { assume(true); }":
+    labels:
+    - source: assume(true)
+      style: primary
+      start: 9
+      end: 21

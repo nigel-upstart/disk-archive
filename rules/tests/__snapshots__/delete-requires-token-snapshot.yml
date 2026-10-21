@@ -1,0 +1,8 @@
+id: delete-requires-token
+snapshots:
+  "fn delete(path: PathBuf) { std::fs::remove_file(path); }":
+    labels:
+    - source: std::fs::remove_file(path)
+      style: primary
+      start: 27
+      end: 53

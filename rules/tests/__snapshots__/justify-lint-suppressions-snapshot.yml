@@ -1,0 +1,14 @@
+id: justify-lint-suppressions
+snapshots:
+  "#![allow(clippy::panic)]":
+    labels:
+    - source: "#![allow(clippy::panic)]"
+      style: primary
+      start: 0
+      end: 24
+  "#[allow(clippy::unwrap_used)] fn f() {}":
+    labels:
+    - source: "#[allow(clippy::unwrap_used)]"
+      style: primary
+      start: 0
+      end: 29

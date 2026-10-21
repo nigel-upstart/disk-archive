@@ -1,0 +1,16 @@
+id: justify-lint-suppressions
+language: Rust
+severity: error
+message: 'Add an immediately preceding // LINT-JUSTIFICATION: comment with a concrete reason (20+ characters).'
+files:
+  - "crates/**/*.rs"
+rule:
+  all:
+    - any:
+        - kind: attribute_item
+        - kind: inner_attribute_item
+    - regex: '#!?\[\s*(allow|expect)\s*\('
+    - not:
+        follows:
+          kind: line_comment
+          regex: '^// LINT-JUSTIFICATION: .{20,}$'

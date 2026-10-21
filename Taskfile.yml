@@ -1,0 +1,56 @@
+version: '3'
+
+vars:
+  QUIET: bash scripts/quiet-run.sh --
+
+tasks:
+  setup:
+    desc: Install pinned tools and hooks (requires Rust, mise, and native prerequisites)
+    cmds:
+      - mise install
+      - mise exec -- lefthook install
+      - mise exec -- task doctor
+  doctor:
+    cmds: ['{{.QUIET}} bash scripts/doctor.sh']
+  fmt:
+    desc: Check formatting without changing files
+    cmds: ['{{.QUIET}} bash scripts/gates.sh fmt']
+  lint:
+    cmds: ['{{.QUIET}} bash scripts/gates.sh lint']
+  test:
+    cmds: ['{{.QUIET}} bash scripts/gates.sh test']
+  verify:
+    cmds: ['{{.QUIET}} bash scripts/verify.sh']
+  bench:
+    desc: Compile benchmarks; performance gate follows in issue 7
+    cmds: ['{{.QUIET}} cargo bench --workspace --no-run --locked']
+  sbom:
+    cmds: ['{{.QUIET}} bash scripts/sbom.sh']
+  coverage:
+    cmds: ['{{.QUIET}} bash scripts/gates.sh coverage']
+  supply-chain:
+    cmds: ['{{.QUIET}} bash scripts/gates.sh supply-chain']
+  parity:
+    cmds: ['{{.QUIET}} bash scripts/gates.sh parity']
+  hook:commit:
+    cmds:
+      - task: fmt
+      - task: lint
+      - '{{.QUIET}} bash scripts/gates.sh secrets'
+  check:
+    desc: Full pre-push and CI backstop
+    cmds:
+      - task: doctor
+      - task: hook:commit
+      - task: test
+      - task: coverage
+      - task: supply-chain
+      - task: verify
+      - task: parity
+      - task: sbom
+  ci:secrets:
+    cmds: ['{{.QUIET}} bash scripts/gates.sh ci-secrets']
+  clean:
+    cmds:
+      - cargo clean
+      - rm -rf .task-logs

@@ -1,0 +1,12 @@
+id: delete-stage-only
+language: Rust
+severity: error
+message: File removal belongs only in the delete stage with VerifiedUpload authorization.
+files:
+  - "crates/**/*.rs"
+ignores:
+  - "crates/archiver/src/delete.rs"
+rule:
+  all:
+    - kind: call_expression
+    - regex: '(remove_file|unlink)\s*\('

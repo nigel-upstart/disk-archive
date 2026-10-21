@@ -1,0 +1,8 @@
+id: bounded-blocking-only
+snapshots:
+  "fn f() { tokio::task::spawn_blocking(work); }":
+    labels:
+    - source: tokio::task::spawn_blocking(work)
+      style: primary
+      start: 9
+      end: 42

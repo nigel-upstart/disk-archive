@@ -1,0 +1,15 @@
+id: no-subprocess
+language: Rust
+severity: error
+message: Only the optional TruffleHog cross-check may launch processes.
+files:
+  - "crates/**/*.rs"
+ignores:
+  - "crates/core/src/scanner/trufflehog.rs"
+rule:
+  all:
+    - any:
+        - kind: call_expression
+        - kind: use_declaration
+        - kind: scoped_identifier
+    - regex: '(std::process|tokio::process|Command::new|Command::new_std)'

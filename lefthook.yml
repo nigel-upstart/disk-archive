@@ -1,0 +1,10 @@
+pre-commit:
+  parallel: false
+  commands:
+    gates:
+      run: mise exec -- task hook:commit
+pre-push:
+  parallel: false
+  commands:
+    gates:
+      run: mise exec -- task check

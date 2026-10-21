@@ -1,0 +1,8 @@
+id: no-blocking-in-async
+valid:
+  - "fn f() { std::fs::read(path); }"
+  - "async fn f() { read_async(path).await; }"
+invalid:
+  - "async fn f() { std::fs::read(path); }"
+  - "async fn f() { std::thread::sleep(delay); }"
+  - "async fn f() { handle.block_on(work); }"
