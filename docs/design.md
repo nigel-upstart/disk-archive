@@ -149,10 +149,14 @@ upload begins so a crash after remote commit but before local state commit is re
 HEAD must match configured bucket/key, gzip Content-Length, original metadata, and encryption.
 Metadata echoing a claimed SHA-256 is not independent remote content verification. Multipart
 SHA256 COMPOSITE is not SHA-256 of concatenated gzip bytes. The store adapter must validate the
-appropriate full-object checksum (for example CRC64NVME against locally computed bytes), or
-read back and hash the object, before supplying whole-gzip `gz_sha256` evidence. ETag is never
-used as a content hash. Versioning/conditional operations must keep verification bound to the
-object that was uploaded; do not race another writer in the same key namespace.
+appropriate checksum against locally computed bytes before projecting observed whole-gzip
+`sha256` metadata into `gz_sha256`. Storage projects actual request-bound key, Content-Length,
+strict original size/hash metadata and observed AES256 truth, not expected-value substitutes.
+The independent checksum gate and projection are tested adapter code, not proved parsing.
+CRC64NVME is not collision-resistant; neither it nor composite SHA256 cryptographically proves
+the whole-gzip SHA256 metadata. That binding still trusts preparation, authenticated S3/TLS and
+the request/response adapter under exclusive namespace ownership. ETag is never used as a content
+hash. Versioning/conditional operations must keep verification bound to the object that was uploaded; do not race another writer in the same key namespace.
 
 `verify_upload` checks explicit expected and observed fields and constructs a private,
 non-cloneable `VerifiedUpload`. `authorize_delete` consumes it and compares a freshly computed
@@ -188,7 +192,7 @@ and fail if installation or proof execution is missing. No workspace build subst
 | `key.rs`, `key_model.rs` | Every successful production `encode_key` equals the versioned byte-sequence model and is <=1024 bytes. The model has a left inverse, hence encoding is injective for a fixed prefix. Loop indexing and arithmetic are in range. | Prefix/path-validation completeness and the runtime `decode_rel` inverse are tested, not proved; different configured prefixes can collide; no cross-prefix namespace isolation is proved. |
 | `bytes.rs`, `needles.rs` | Literal occurrence matches a quantified byte-subsequence predicate; final `guard_line` output contains none of the set's nonempty literals, including marker collisions. | Finding construction, JSON escaping, longest-first replacement and `replace_all_bounded` allocation limits are tested, not proved. Scanner completeness, secret erasure, cross-line concatenation, and whole-output cleanliness are not theorems. |
 | `pem.rs` | Returned marker spans have the uppercase/space delimiter grammar and valid bounds. Enter activates state; active resume emits empty bytes while active, or a suffix following a valid END when leaving. | Completeness/first-match selection, default-state derivation, inline PEM replacement and environment-assignment detection are tested, not proved. |
-| `lifecycle.rs` | Exact legal state graph; successful upload authority requires matching key/length/hashes/original metadata/AES256 and valid timestamps. Successful deletion authorization binds the consumed token and current identity to equal device/inode/size/mtime/ctime/hash. | Hash collision resistance, authentic SDK/HEAD evidence, configured bucket/version binding, no-follow source opens, exclusive namespace ownership, actual unlink and crash recovery. |
+| `lifecycle.rs` | Exact legal state graph; successful upload authority requires matching key/length/hashes/original metadata/AES256 and valid timestamps. Successful deletion authorization binds the consumed token and current identity to equal device/inode/size/mtime/ctime/hash. | Hash collision resistance, tested HEAD parsing/projection and independent checksum gate, checksum-to-whole-gzip-metadata binding (not a CRC/composite-to-SHA theorem), authentic SDK/HEAD evidence, configured bucket/version binding, no-follow source opens, exclusive namespace ownership, actual unlink and crash recovery. |
 
 Prefix allocation is an adapter obligation: `archive` + `other/v1/file` and
 `archive/v1/other` + `file` both produce `archive/v1/other/v1/file.gz`. Distinct valid
