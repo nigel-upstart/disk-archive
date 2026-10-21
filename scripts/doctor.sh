@@ -12,4 +12,8 @@ if ((missing)); then
 	exit 1
 fi
 python3 scripts/policy.py toolchain
+if ! cargo llvm-cov show-env --sh >/dev/null 2>&1; then
+	printf 'Missing matching LLVM coverage tools. Install rustup component llvm-tools-preview, or set LLVM_COV and LLVM_PROFDATA to tools matching rustc -vV.\n' >&2
+	exit 1
+fi
 printf 'Tooling ready. Verus has a separate pin; task verify checks its integration status.\n'

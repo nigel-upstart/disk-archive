@@ -6,3 +6,9 @@ snapshots:
       style: primary
       start: 17
       end: 40
+  "fn f() { let x = r#\"s3://placeholder/path\"#; }":
+    labels:
+    - source: r#"s3://placeholder/path"#
+      style: primary
+      start: 17
+      end: 43

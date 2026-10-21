@@ -52,8 +52,11 @@ class PolicyTests(unittest.TestCase):
                 verified.write_text(f'[{section}]\nx="1"')
                 with self.assertRaises(ValueError):
                     policy.check_manifest(verified)
-            verified.write_text('[package]\nname="verified"')
+            verified.write_text('[package]\nname="verified"\n[lints]\nworkspace=true')
             policy.check_manifest(verified)
+            path.write_text('[package]\nname="unlinted"')
+            with self.assertRaises(ValueError):
+                policy.check_manifest(path)
 
     def test_staged_guard_checks_index_not_worktree(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -69,9 +72,17 @@ class PolicyTests(unittest.TestCase):
             subprocess.run(["git", "-C", temporary, "add", "fixture"], check=True)
             subprocess.run(["python3", str(ROOT / "scripts/policy.py"), "staged"], cwd=root, check=True)
 
+    def test_metadata_forbids_credentials_process(self):
+        metadata = {"packages": [{"id": "aws", "name": "aws-config", "source": None}], "resolve": {"nodes": [{"id": "aws", "features": ["credentials-process"]}]}}
+        with patch.object(policy.pathlib.Path, "glob", return_value=[]), patch.object(policy, "check_manifest"), patch.object(policy.pathlib.Path, "exists", return_value=False), patch.object(policy.subprocess, "check_output", return_value=json.dumps(metadata).encode()) as metadata_call:
+            with self.assertRaisesRegex(ValueError, "credentials-process"):
+                policy.check_workspace()
+            self.assertIn("--all-features", metadata_call.call_args.args[0])
+
     def test_metadata_checks_only_verified_package(self):
         metadata = {"packages": [], "resolve": {"nodes": []}}
-        with patch.object(policy.pathlib.Path, "glob", return_value=[]), patch.object(policy, "check_manifest"), patch.object(policy.pathlib.Path, "exists", return_value=False), patch.object(policy.subprocess, "check_output", return_value=json.dumps(metadata).encode()):
+        isolated = {"packages": [{"manifest_path": "/unrelated/Cargo.toml", "dependencies": ["allowed"]}, {"manifest_path": str(Path("crates/verified/Cargo.toml").resolve()), "dependencies": []}]}
+        with patch.object(policy.pathlib.Path, "glob", return_value=[]), patch.object(policy, "check_manifest"), patch.object(policy.pathlib.Path, "exists", return_value=True), patch.object(policy.subprocess, "check_output", side_effect=[json.dumps(metadata).encode(), json.dumps(isolated).encode()]):
             policy.check_workspace()
 
 
@@ -105,6 +116,28 @@ class QuietTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             (Path(root) / ".task-logs").symlink_to(root)
             self.assertEqual(self.run_quiet(root, "--", "true").returncode, 2)
+
+
+class SecretScanTests(unittest.TestCase):
+    def test_exact_allowlist_requires_both_content_and_path(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            shutil.copy(ROOT / ".gitleaks.toml", root / ".gitleaks.toml")
+            path = root / "legacy/python/tests/test_redactor.py"
+            path.parent.mkdir(parents=True)
+            # Build the assignment at runtime so this negative scanner test is
+            # not itself a literal credential-shaped source-code finding.
+            name = "_".join(("JIRA", "TOKEN"))
+            allowed = name + "=" + "abc123def456 "
+            path.write_text(allowed)
+            command = ["gitleaks", "dir", ".", "--redact", "--no-banner"]
+            result = subprocess.run(command, cwd=root, capture_output=True)
+            self.assertEqual(result.returncode, 0)
+            path.write_text(allowed + "\n" + name + "=" + "q1w2e3r4t5y6u7i8o9p0 ")
+            self.assertNotEqual(subprocess.run(command, cwd=root, capture_output=True).returncode, 0)
+            path.unlink()
+            (root / "other.txt").write_text(allowed)
+            self.assertNotEqual(subprocess.run(command, cwd=root, capture_output=True).returncode, 0)
 
 
 class RulePathTests(unittest.TestCase):

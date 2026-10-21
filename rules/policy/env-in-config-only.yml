@@ -13,4 +13,4 @@ rule:
         - kind: call_expression
         - kind: use_declaration
         - kind: scoped_identifier
-    - regex: '(std::env::(var|vars|var_os|vars_os)|env::(var|vars|var_os|vars_os)|use std::env)'
+    - regex: '(std::env::(var|vars|var_os|vars_os)|env::(var|vars|var_os|vars_os)|use std::env|\bstd::\{[^;]*\benv\b)'

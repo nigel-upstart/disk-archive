@@ -7,7 +7,7 @@ files:
 rule:
   all:
     - kind: call_expression
-    - regex: '(std::fs::|fs::|std::thread::sleep|thread::sleep|\.block_on\(|Handle::block_on)'
+    - regex: '(^std::fs::|^fs::|^std::thread::sleep|^thread::sleep|\.block_on\(|\bHandle::block_on)'
     - inside:
         kind: function_item
         regex: '\basync\s+fn\b'

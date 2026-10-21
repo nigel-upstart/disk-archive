@@ -1,8 +1,12 @@
 id: no-blocking-in-async
 valid:
+  - "async fn f() { tokio::fs::read(path).await; }"
+  - "async fn f() { tokio::fs::File::open(path).await; }"
   - "fn f() { std::fs::read(path); }"
   - "async fn f() { read_async(path).await; }"
 invalid:
+  - "async fn f() { fs::read(path); }"
+  - "async fn f() { if ready { std::fs::File::open(path); } }"
   - "async fn f() { std::fs::read(path); }"
   - "async fn f() { std::thread::sleep(delay); }"
   - "async fn f() { handle.block_on(work); }"

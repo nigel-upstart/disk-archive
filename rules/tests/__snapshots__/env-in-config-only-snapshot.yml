@@ -18,3 +18,9 @@ snapshots:
       style: primary
       start: 0
       end: 13
+  "use std::{env, path::Path};":
+    labels:
+    - source: use std::{env, path::Path};
+      style: primary
+      start: 0
+      end: 27

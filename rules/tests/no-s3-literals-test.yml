@@ -2,4 +2,5 @@ id: no-s3-literals
 valid:
   - "fn f() { let x = config.bucket; }"
 invalid:
+  - 'fn f() { let x = r#"s3://placeholder/path"#; }'
   - "fn f() { let x = \"s3://placeholder/path\"; }"

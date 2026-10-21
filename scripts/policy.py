@@ -81,6 +81,8 @@ def check_files(staged: bool) -> None:
 
 def check_manifest(path: pathlib.Path) -> None:
     data = tomllib.loads(path.read_text())
+    if "package" in data and data.get("lints", {}).get("workspace") is not True:
+        raise ValueError(f"workspace packages must inherit strict lints: {path}")
     if path.parent.name == "verified":
         for section in ("dependencies", "dev-dependencies", "build-dependencies"):
             if data.get(section) or any(target.get(section) for target in data.get("target", {}).values()):
@@ -102,7 +104,7 @@ def check_manifest(path: pathlib.Path) -> None:
 def check_workspace() -> None:
     for path in [pathlib.Path("Cargo.toml"), *pathlib.Path("crates").glob("*/Cargo.toml")]:
         check_manifest(path)
-    metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--format-version", "1", "--locked"]))
+    metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--format-version", "1", "--locked", "--all-features"]))
     for package in metadata["packages"]:
         source = package.get("source") or ""
         if source.startswith("git+"):
@@ -110,6 +112,9 @@ def check_workspace() -> None:
             revision = re.fullmatch(r"rev=([a-f0-9]{40})#([a-f0-9]{40})", query)
             if url not in GIT_SOURCES or not revision or revision[1] != revision[2]:
                 raise ValueError("resolved git dependency is not an approved immutable revision")
+            notes = pathlib.Path("docs/dependencies.md")
+            if not notes.is_file() or revision[1] not in notes.read_text():
+                raise ValueError("resolved git dependency needs an upstream-tracking note in docs/dependencies.md")
     verified = pathlib.Path("crates/verified/Cargo.toml")
     if verified.exists():
         isolated = json.loads(subprocess.check_output([

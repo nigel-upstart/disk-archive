@@ -27,6 +27,8 @@ jobs:
           pin=$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')
           rustup toolchain install "$pin" --profile minimal --component clippy,rustfmt,llvm-tools-preview
       - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          version: 2026.10.15
       - name: Install isolated Verus when its integration lands
         run: |
           if [[ -f scripts/verus-install.sh ]]; then

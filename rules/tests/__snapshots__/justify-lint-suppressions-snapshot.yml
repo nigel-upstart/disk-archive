@@ -12,3 +12,9 @@ snapshots:
       style: primary
       start: 0
       end: 29
+  "// LINT-JUSTIFICATION: too short\n#[allow(clippy::panic)] fn f() {}":
+    labels:
+    - source: "#[allow(clippy::panic)]"
+      style: primary
+      start: 33
+      end: 56

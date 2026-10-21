@@ -18,3 +18,9 @@ snapshots:
       style: primary
       start: 0
       end: 26
+  "use std::{process::Command, path::Path};":
+    labels:
+    - source: use std::{process::Command, path::Path};
+      style: primary
+      start: 0
+      end: 40

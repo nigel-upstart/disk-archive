@@ -35,7 +35,7 @@ secrets)
 	;;
 ci-secrets)
 	python3 scripts/policy.py tracked
-	gitleaks git --redact --no-banner
+	gitleaks git --log-opts=HEAD --redact --no-banner
 	;;
 parity)
 	# Golden parity is introduced by A/D; absence is not represented as a passing test.

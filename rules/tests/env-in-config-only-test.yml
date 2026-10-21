@@ -4,4 +4,5 @@ valid:
 invalid:
   - "fn f() { std::env::var(\"HOME\"); }"
   - "use std::env;"
+  - "use std::{env, path::Path};"
   - "fn f() { env::var_os(\"HOME\"); }"
