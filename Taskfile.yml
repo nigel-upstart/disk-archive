@@ -11,7 +11,7 @@ tasks:
       - mise exec -- lefthook install
       - mise exec -- task doctor
   doctor:
-    cmds: ['{{.QUIET}} bash scripts/doctor.sh']
+    cmds: ['{{.QUIET}} bash scripts/doctor.sh {{.CLI_ARGS}}']
   fmt:
     desc: Check formatting without changing files
     cmds: ['{{.QUIET}} bash scripts/gates.sh fmt']
@@ -50,6 +50,18 @@ tasks:
       - task: sbom
   ci:secrets:
     cmds: ['{{.QUIET}} bash scripts/gates.sh ci-secrets']
+  profile:cpu:
+    desc: Sample only the bounded synthetic localhost pipeline (optional tools)
+    cmds: ['{{.QUIET}} bash scripts/profile.sh cpu']
+  profile:trace:
+    desc: Export a sanitized Chrome/Perfetto trace of the synthetic pipeline
+    cmds: ['{{.QUIET}} bash scripts/profile.sh trace']
+  profile:heap:
+    desc: Export sanitized DHAT JSON of the synthetic pipeline
+    cmds: ['{{.QUIET}} bash scripts/profile.sh heap']
+  profile:console:
+    desc: Serve loopback-only Tokio telemetry for the synthetic pipeline
+    cmds: ['bash scripts/profile.sh console']
   clean:
     cmds:
       - cargo clean

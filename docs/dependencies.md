@@ -45,6 +45,31 @@ Exact duplicate-API and foldhash-Zlib allowances in deny.toml expire 2026-11-21;
 not vulnerability waivers. The macOS-only core-foundation duplicate is required by Hickory's
 system-configuration DNS integration versus rustls-native-certs' security-framework ABI.
 
+## Optional profiling admission (issue 8)
+
+Registry pins checked with `cargo info` on 2026-10-21: tracing 0.1.44 (MIT), tracing-subscriber
+0.3.23 (MIT), tracing-chrome 0.7.2 (MIT, thoren-d/tracing-chrome), console-subscriber 0.5.0
+(MIT, tokio-rs/console), DHAT 0.3.3 (MIT OR Apache-2.0, nnethercote/dhat-rs). They are optional,
+exact-pinned with locked transitive checksums; default normal application/helper trees must
+exclude all exporters, subscribers and DHAT. The helper itself has zero default dependencies.
+Console defaults/environment filtering and tracing-subscriber formatting/environment features
+are disabled at direct declarations; no runtime environment filter is installed even if a
+transitive crate unifies those capabilities. Console enables Tokio's tracing only in its opt-in
+feature. No optional library enters the dependency-free verified kernel.
+
+Review these pins monthly for advisories and exporter behavior; rerun planted-input/thread-name
+privacy controls, DHAT memory-export/command-line sanitization tests and default-tree checks.
+The memory-export API is public but marked testing-only upstream; its finish-once behavior is
+explicitly tested. A narrow miniz_oxide 0.8.9 duplicate allowance expires 2026-11-21: optional
+DHAT/backtrace uses object decompression's 0.8 API while the current gzip compressor uses 0.9. This is not an
+advisory waiver. Cargo-deny advisories/licenses/sources/bans passed on the initial optional graph;
+final integrated admission and all-member SBOM validation remain required.
+
+Optional caller-side tools live only in `mise.profiling.toml`: samply 0.13.1 (mstange/samply),
+flamegraph 0.6.14 (flamegraph-rs/flamegraph), tokio-console 0.1.14 (tokio-rs/console); all permissive
+MIT/Apache-2.0 or MIT. Published package metadata and upstream release tags were checked before
+pinning. They are never default application dependencies or default setup installs.
+
 ## Separate compiler and verifier pins
 
 The workspace stable pin belongs to the normal build. `tools/verus.env` pins Verus

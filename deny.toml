@@ -18,6 +18,7 @@ multiple-versions = "deny"
 wildcards = "deny"
 # Add only explicitly reviewed duplicate versions, with an explanation and issue.
 skip = [
+  { crate = "miniz_oxide@0.8.9", reason = "Owner: maintainer; #8; expires 2026-11-21; optional DHAT backtrace/object API vs current gzip compression API" },
   { crate = "base64@0.22.1", reason = "Owner: maintainer; #5; expires 2026-11-21; AWS histogram/mock API vs hyper transport API" },
   { crate = "block-buffer@0.10.4", reason = "Owner: maintainer; #5; expires 2026-11-21; AWS checksums vs current RustCrypto digest API" },
   { crate = "core-foundation@0.9.4", reason = "Owner: maintainer; #5; expires 2026-11-21; Hickory system-configuration macOS DNS ABI vs rustls-native-certs security-framework ABI" },

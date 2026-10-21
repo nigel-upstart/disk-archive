@@ -1,0 +1,39 @@
+[package]
+name = "disk-archive-profiling"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+profiling = [
+  "dep:tracing",
+  "dep:tracing-chrome",
+  "dep:tracing-subscriber",
+  "dep:serde_json",
+]
+heap = ["profiling", "dep:dhat"]
+console = ["profiling", "dep:console-subscriber", "dep:tokio"]
+
+[dependencies]
+tracing = { version = "=0.1.44", default-features = false, features = [
+  "std",
+  "attributes",
+], optional = true }
+tracing-chrome = { version = "=0.7.2", optional = true }
+tracing-subscriber = { version = "=0.3.23", default-features = false, features = [
+  "registry",
+  "std",
+], optional = true }
+serde_json = { version = "=1.0.154", optional = true }
+dhat = { version = "=0.3.3", optional = true }
+console-subscriber = { version = "=0.5.0", default-features = false, optional = true }
+tokio = { version = "=1.54.0", features = ["rt", "tracing"], optional = true }
+
+[dev-dependencies]
+tempfile = "=3.27.0"
+
+[lints]
+workspace = true

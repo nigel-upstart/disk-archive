@@ -1,0 +1,80 @@
+name: Optional profiling
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'feat/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: profiling-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  features:
+    name: Optional profiling feature build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned workspace Rust
+        run: |
+          pin=$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')
+          rustup toolchain install "$pin" --profile minimal
+      - name: Check no default exporter dependency
+        run: python3 scripts/profile-default.py
+      - name: Check optional helper features without running a profile
+        run: cargo check --locked -p disk-archive-profiling --all-targets --all-features
+      - name: Check explicit Tokio unstable feature
+        env:
+          RUSTFLAGS: --cfg tokio_unstable
+        run: cargo check --locked -p disk-archive-profiling --features console
+  artifacts:
+    name: Synthetic diagnostic artifacts (manual only)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install native prerequisites and perf
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake libboost-dev ragel pkg-config linux-tools-common linux-tools-generic
+      - name: Install pinned workspace Rust
+        run: |
+          pin=$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')
+          rustup toolchain install "$pin" --profile minimal --component llvm-tools-preview
+      - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+        with:
+          version: 2026.10.15
+      - name: Install explicitly optional profile tools
+        run: task doctor -- --profiling
+      - name: Configure sampling only on this disposable runner
+        run: |
+          sudo sysctl kernel.perf_event_paranoid=-1
+          sudo sysctl kernel.kptr_restrict=0
+          perf_bin=$(find /usr/lib/linux-tools -type f -name perf -print -quit)
+          test -n "$perf_bin"
+          mkdir -p "$RUNNER_TEMP/profile-bin"
+          ln -s "$perf_bin" "$RUNNER_TEMP/profile-bin/perf"
+          echo "$RUNNER_TEMP/profile-bin" >> "$GITHUB_PATH"
+      - name: Run bounded synthetic diagnostics (never AWS)
+        run: |
+          task profile:trace
+          task profile:heap
+          task profile:cpu
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: synthetic-diagnostic-profiles
+          path: |
+            profiles/**/trace.json
+            profiles/**/heap.json
+            profiles/**/cpu.json
+            profiles/**/cpu.svg
+          if-no-files-found: error
+          retention-days: 3

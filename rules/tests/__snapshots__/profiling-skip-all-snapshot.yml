@@ -1,0 +1,20 @@
+id: profiling-skip-all
+snapshots:
+  "#[cfg_attr(feature = \"profiling\", tracing::instrument(skip(input)))] async fn f(input: String, other: String) {}":
+    labels:
+    - source: "#[cfg_attr(feature = \"profiling\", tracing::instrument(skip(input)))]"
+      style: primary
+      start: 0
+      end: 68
+  "#[tracing::instrument(fields(file_id = 1))] async fn f(input: String) {}":
+    labels:
+    - source: "#[tracing::instrument(fields(file_id = 1))]"
+      style: primary
+      start: 0
+      end: 43
+  "#[tracing::instrument] async fn f(input: String) {}":
+    labels:
+    - source: "#[tracing::instrument]"
+      style: primary
+      start: 0
+      end: 22
