@@ -245,9 +245,11 @@ async fn cancellation_and_caller_drop_shield_abort_and_spool_quota() -> TestResu
         let mock = MockS3::start().await?;
         let store = SdkStore::new(mock.client(), options())?;
         let work = workdir()?;
-        let prep = preparer(&work, ChecksumPolicy::Sha256)?;
+        let counters = Arc::new(disk_archive_metrics::Counters::default());
+        let prep = preparer(&work, ChecksumPolicy::Sha256)?.with_counters(counters.clone());
         let key = "cancel/multipart.gz";
         let upload = Arc::new(prepare(&work, &prep, &corpus(12 * 1_048_576), key).await?);
+        let actual_written = upload.expected().gzip_size;
         mock.server.insert_fault(
             "synthetic-archive",
             key,
@@ -265,6 +267,7 @@ async fn cancellation_and_caller_drop_shield_abort_and_spool_quota() -> TestResu
         assert_eq!(mock.created(), 1);
         drop(upload);
         assert!(prep.reserved_disk_bytes() > 0);
+        assert!(counters.snapshot().is_err());
         if drop_caller {
             job.abort();
             assert!(job.await.is_err());
@@ -275,6 +278,10 @@ async fn cancellation_and_caller_drop_shield_abort_and_spool_quota() -> TestResu
         tokio::time::timeout(Duration::from_secs(8), store.drain()).await??;
         assert_eq!(mock.aborted(), mock.created());
         assert_eq!(prep.reserved_disk_bytes(), 0);
+        assert_eq!(
+            counters.snapshot().map_err(|_| "snapshot")?.peak_temp_bytes,
+            actual_written
+        );
         assert!(!mock.server.object_exists("synthetic-archive", key).await?);
         mock.shutdown().await?;
     }

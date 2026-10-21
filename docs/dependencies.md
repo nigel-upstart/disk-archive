@@ -77,6 +77,18 @@ and Verus compilers. The explicit comparison tool uses TruffleHog 3.99.2 release
 archives with checked SHA-256 (Linux x86_64/macOS arm64); it is test tooling only,
 not a production dependency, and credential verification/update checks are off.
 
+## SQLite state-writer admission
+
+The async shell uses registry `rusqlite 0.40.2` with defaults disabled and only
+`libsqlite3-sys`/`bundled` enabled. The lockfile admits `libsqlite3-sys 0.38.2`,
+`fallible-iterator 0.3.0`, `fallible-streaming-iterator 0.1.9` and the native build
+helper `vcpkg 0.2.15`; existing registry identities and immutable Git pins remain
+unchanged. Bundled SQLite avoids an ambient system-library version dependency;
+loadable extensions and the default alternate backends are not enabled. One bounded
+blocking writer owns the connection. Re-run license/advisory/feature checks,
+SQLite durability/resume regressions and every workspace SBOM on upgrades. No new
+advisory, license or duplicate-version exception is introduced for this layer.
+
 ## Separate compiler and verifier pins
 
 The workspace stable pin belongs to the normal build. `tools/verus.env` pins Verus

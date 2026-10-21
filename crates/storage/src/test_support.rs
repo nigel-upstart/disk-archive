@@ -52,6 +52,7 @@ struct Controls {
     created: AtomicUsize,
     aborted: AtomicUsize,
     parts: AtomicUsize,
+    source_puts: AtomicUsize,
 }
 
 /// Local upstream server plus a fault/observation proxy. All fixtures are synthetic.
@@ -114,6 +115,13 @@ impl MockS3 {
                         let control = control.clone();
                         async move {
                             let (head, create, abort, part) = classify(&request);
+                            // G's source namespace is disjoint from all manifests. Count actual
+                            // HTTP attempts, including failed requests and multipart parts.
+                            if request.method() == hyper::Method::PUT
+                                && request.uri().path().contains("/v1/")
+                            {
+                                control.source_puts.fetch_add(1, Ordering::AcqRel);
+                            }
                             // Preserve the signed Host header; only routing changes.
                             let uri = format!(
                                 "http://{target}{}",
@@ -192,6 +200,18 @@ impl MockS3 {
                 )
                 .build(),
         )
+    }
+
+    /// Synthetic loopback endpoint for an outer measuring proxy; never production configuration.
+    #[must_use]
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
+    /// Actual HTTP PUT attempts in G's v1 source namespace, never manifest writes.
+    #[must_use]
+    pub fn source_put_attempts(&self) -> usize {
+        self.controls.source_puts.load(Ordering::Acquire)
     }
 
     /// Set independent HEAD corruption for subsequent requests.
@@ -300,6 +320,8 @@ mod orphan_tests;
 mod prepare_tests;
 #[cfg(test)]
 mod resource_order_tests;
+#[cfg(test)]
+mod temp_metrics_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

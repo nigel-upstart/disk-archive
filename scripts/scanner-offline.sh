@@ -29,6 +29,8 @@ if len(lines) != 1 or ' execve(' not in lines[0] or not lines[0].endswith(' = 0'
     raise SystemExit('scanner network/process audit failed (raw-pointer trace under target)')
 print('Native scanner syscall audit: network=0; hot-path subprocess execs=0')
 PY
+	# Actual archive path includes loopback SDK traffic; audit process attempts separately.
+	python3 -B crates/archiver/tests/run.py --audit
 	;;
 Darwin)
 	# Local denial smoke; the Linux syscall audit is the stronger CI gate.

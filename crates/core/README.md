@@ -15,10 +15,11 @@ Required: `DISK_ARCHIVE_BUCKET`, `DISK_ARCHIVE_PREFIX`. Optional:
 | Suffix after `DISK_ARCHIVE_` | Default / contract |
 | --- | --- |
 | `AWS_PROFILE`, `REGION` | absent: SDK provider chain |
+| `CA_BUNDLE` | absent; read-only `AWS_CA_BUNDLE` fallback, relative paths resolve against cwd |
 | `ROOTS_ALL_FILES`, `ROOTS_JSONL` | empty list when absent; `;`-separated paths when set |
 | `WORK_DIR` | absent; real execution must require it in shell |
 | `MIN_AGE_DAYS` | 30; checked conversion to seconds, 0 allowed |
-| `WORKERS` | 4; 1–256 |
+| `WORKERS` | available parallelism capped at 256, fallback 1; explicit values 1–256 |
 | `MAX_LINE_BYTES` | 1 MiB; max 16 MiB |
 | `MAX_OUTPUT_LINE_BYTES` | 4 MiB; max 64 MiB (includes intermediates) |
 | `MAX_FINDINGS` | 256 raw variants; max 4096 |

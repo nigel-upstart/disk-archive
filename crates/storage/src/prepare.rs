@@ -6,6 +6,7 @@ use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use disk_archive_metrics::{AppendLease, Counters};
 use disk_archive_verified::age::Timestamp;
 use flate2::{Compression, GzBuilder};
 use sha2::{Digest as _, Sha256};
@@ -82,6 +83,7 @@ pub struct UploadPreparer {
     disk: Arc<Semaphore>,
     existing: Arc<OnceCell<OwnedSemaphorePermit>>,
     cpu: BlockingPool,
+    counters: Option<Arc<Counters>>,
 }
 
 impl UploadPreparer {
@@ -98,7 +100,16 @@ impl UploadPreparer {
             disk: Arc::new(Semaphore::new(permits)),
             existing: Arc::new(OnceCell::new()),
             cpu,
+            counters: None,
         })
+    }
+
+    /// Observe actual newly-created gzip spool bytes and lifetimes. No I/O at configuration.
+    /// Use the same counters as the shell; clones retain each spool through SDK body cleanup.
+    #[must_use]
+    pub fn with_counters(mut self, counters: Arc<Counters>) -> Self {
+        self.counters = Some(counters);
+        self
     }
 
     /// Charge crash-leftover derived spools once across clones, before new preparation.
@@ -175,9 +186,18 @@ impl UploadPreparer {
             permit = self.disk.clone().acquire_many_owned(u32::try_from(units).map_err(|_| StoreError::Budget)?) => permit.map_err(|_| StoreError::Budget)?,
         };
         let options = self.options.clone();
+        let counters = self.counters.clone();
         self.cpu
             .run(cancel, move |child| {
-                prepare_blocking(source, identity, key, &options, cap, permit, &child)
+                prepare_blocking(
+                    source,
+                    identity,
+                    key,
+                    &options,
+                    cap,
+                    &child,
+                    PreparationResources { permit, counters },
+                )
             })
             .await
     }
@@ -200,8 +220,22 @@ pub struct PreparedUpload {
 }
 
 pub(crate) struct Spool {
-    file: NamedTempFile,
+    file: Option<NamedTempFile>,
     _disk: OwnedSemaphorePermit,
+    metrics: Option<AppendLease>,
+}
+
+impl Drop for Spool {
+    fn drop(&mut self) {
+        // Last Arc owner includes writer descriptors, SDK work and retained HTTP bodies.
+        // A failed unlink must never turn into a successful completed measurement.
+        if let Some(file) = self.file.take()
+            && file.close().is_err()
+            && let Some(metrics) = &self.metrics
+        {
+            metrics.cleanup_failed();
+        }
+    }
 }
 
 impl PreparedUpload {
@@ -211,8 +245,12 @@ impl PreparedUpload {
         &self.expected
     }
 
-    pub(crate) fn path(&self) -> &Path {
-        self.spool.file.path()
+    pub(crate) fn path(&self) -> Result<&Path, StoreError> {
+        self.spool
+            .file
+            .as_ref()
+            .map(NamedTempFile::path)
+            .ok_or(StoreError::Worker)
     }
 }
 
@@ -249,15 +287,21 @@ fn existing_spool_units(
     u32::try_from(units).map_err(|_| StoreError::Budget)
 }
 
+struct PreparationResources {
+    permit: OwnedSemaphorePermit,
+    counters: Option<Arc<Counters>>,
+}
+
 fn prepare_blocking(
     mut source: File,
     identity: SourceIdentity,
     key: String,
     options: &PrepareOptions,
     cap: u64,
-    permit: OwnedSemaphorePermit,
     cancel: &CancellationToken,
+    resources: PreparationResources,
 ) -> Result<PreparedUpload, StoreError> {
+    let PreparationResources { permit, counters } = resources;
     let before = source.metadata().map_err(|_| StoreError::Io)?;
     if !before.is_file() || metadata_identity(&before, identity.sha256)? != identity {
         return Err(StoreError::SourceChanged);
@@ -269,15 +313,31 @@ fn prepare_blocking(
     source
         .seek(SeekFrom::Start(0))
         .map_err(|_| StoreError::Io)?;
+    let metrics = counters
+        .map(|c| c.append_temporary())
+        .transpose()
+        .map_err(|_| StoreError::Worker)?;
     let spool = tempfile::Builder::new()
         .prefix("archive-")
         .suffix(".gz")
         .tempfile_in(&options.work_dir)
         .map_err(|_| StoreError::Io)?;
+    let spool = Arc::new(Spool {
+        file: Some(spool),
+        _disk: permit,
+        metrics,
+    });
     let mut writer = HashWriter::new(
-        spool.as_file().try_clone().map_err(|_| StoreError::Io)?,
+        spool
+            .file
+            .as_ref()
+            .ok_or(StoreError::Worker)?
+            .as_file()
+            .try_clone()
+            .map_err(|_| StoreError::Io)?,
         cap,
         options.part_size,
+        spool.clone(),
     )?;
     let encoded = encode(&mut source, &mut writer, identity.size, cancel);
     if writer.over_budget {
@@ -328,10 +388,7 @@ fn prepare_blocking(
     Ok(PreparedUpload {
         multipart_threshold: options.multipart_threshold,
         part_size: options.part_size,
-        spool: Arc::new(Spool {
-            file: spool,
-            _disk: permit,
-        }),
+        spool,
         expected,
     })
 }
@@ -401,6 +458,7 @@ pub fn metadata_identity(
 
 struct HashWriter {
     file: File,
+    spool: Arc<Spool>,
     cap: u64,
     total: u64,
     sha: Sha256,
@@ -413,9 +471,10 @@ struct HashWriter {
 }
 
 impl HashWriter {
-    fn new(file: File, cap: u64, part_size: u64) -> Result<Self, StoreError> {
+    fn new(file: File, cap: u64, part_size: u64, spool: Arc<Spool>) -> Result<Self, StoreError> {
         Ok(Self {
             file,
+            spool,
             cap,
             total: 0,
             sha: Sha256::new(),
@@ -436,7 +495,11 @@ impl Write for HashWriter {
             self.over_budget = true;
             return Err(std::io::Error::other("spool budget"));
         }
-        let n = self.file.write(bytes)?;
+        let n = if let Some(metrics) = &self.spool.metrics {
+            metrics.writer(&mut self.file).write(bytes)?
+        } else {
+            self.file.write(bytes)?
+        };
         let bytes = bytes
             .get(..n)
             .ok_or_else(|| std::io::Error::other("spool range"))?;

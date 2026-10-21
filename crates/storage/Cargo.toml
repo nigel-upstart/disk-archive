@@ -38,6 +38,7 @@ base64 = "0.22.1"
 bytes = "1.12.1"
 crc = "3.4.0"
 disk-archive-verified = { version = "0.1.0", path = "../verified" }
+disk-archive-metrics = { version = "0.1.0", path = "../metrics" }
 flate2 = "1.1.10"
 rustls = { version = "0.23.37", default-features = false, features = [
   "aws_lc_rs",

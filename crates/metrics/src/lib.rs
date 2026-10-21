@@ -1,6 +1,9 @@
 //! Exact, explicit operation instrumentation shared by runtime adapters and benchmarks.
 //! Not a syscall tracer: every adapter operation must pass through these counters.
 
+mod temporary;
+pub use temporary::{AppendLease, AppendWriter};
+
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -27,7 +30,8 @@ pub struct Snapshot {
     pub process_spawns: u64,
     /// Bytes actually submitted to the transport, including retry traffic.
     pub bytes_uploaded: u64,
-    /// Peak simultaneously reserved/occupied temporary bytes, not a sum of file sizes.
+    /// Peak simultaneously live logical temporary bytes, not physical filesystem blocks.
+    /// Production append leases count successful writes; legacy reservations count admissions.
     pub peak_temp_bytes: u64,
     /// Actual request attempts per object; key is a synthetic ordinal, never a source path.
     pub requests: BTreeMap<(SizeClass, u64), u64>,

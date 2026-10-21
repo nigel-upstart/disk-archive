@@ -24,8 +24,8 @@ mirror disagree, the issue wins, and the mirror should be fixed or deleted.
 
 ## Resuming after a restart
 
-Read [STATUS.md](STATUS.md) for broad ownership, preserved worktrees and mandatory
-live-state checks before creating another worker or touching an existing branch.
+Use current GitHub issues/PRs and actual worktree status rather than a stale ownership mirror.
+Inspect preserved branches and uncommitted changes before creating a worker or modifying a branch.
 
 ```sh
 gh issue list -R nigel-upstart/disk-archive --state open
