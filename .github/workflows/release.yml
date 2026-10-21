@@ -28,11 +28,8 @@ jobs:
         with:
           version: 2026.10.15
           cache: false
-      - name: Install isolated Verus
-        run: |
-          if [[ -f scripts/verus-install.sh ]]; then
-            bash scripts/verus-install.sh
-          fi
+      - name: Require isolated Verus integration for releases
+        run: bash scripts/verus-install.sh
       - run: task check
       - run: cargo build --release --locked --package disk-archive
       - uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
@@ -45,7 +42,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" target/sbom/*.cdx.json target/release/disk-archive --clobber
+            gh release upload "$RELEASE_TAG" target/sbom/*.cdx.json target/release/disk-archive
           else
             gh release create "$RELEASE_TAG" target/sbom/*.cdx.json target/release/disk-archive --verify-tag --generate-notes
           fi
