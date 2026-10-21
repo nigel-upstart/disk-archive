@@ -43,7 +43,11 @@ Open `heap.json` in DHAT's `dh_view.html` to inspect allocation sites, peak live
 retained allocations. DHAT reports allocated memory, not operating-system RSS. CPU profiles use
 `samply` on macOS (open the Firefox profiler JSON with samply) or `perf` plus flamegraph on Linux
 (open `cpu.svg` locally). These caller-side tools can require OS permissions and add overhead;
-they are never invoked by the archiver hot path. Attach `tokio-console http://127.0.0.1:6669`
+they are never invoked by the archiver hot path. Linux CPU builds force Rust frame pointers and
+sample user-space CPU-clock at 199 Hz with frame-pointer call chains, rather than persisting raw
+DWARF stack-memory dumps. Native libraries without frame pointers may truncate those call chains;
+this is a diagnostic tradeoff, not a complete native instruction profile. Attach
+`tokio-console http://127.0.0.1:6669`
 during `task profile:console` to inspect task polls and resource waits. Console fails with a
 static error unless the build explicitly sets `RUSTFLAGS="--cfg tokio_unstable"`; its Task does so.
 

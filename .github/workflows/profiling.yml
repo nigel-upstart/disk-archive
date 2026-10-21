@@ -35,10 +35,14 @@ jobs:
           RUSTFLAGS: --cfg tokio_unstable
         run: cargo check --locked -p disk-archive-profiling --features console
   artifacts:
-    name: Synthetic diagnostic artifacts (manual only)
+    name: Synthetic diagnostic artifacts (${{ matrix.mode }}, manual only)
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [trace, heap, cpu]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -52,9 +56,11 @@ jobs:
       - uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
         with:
           version: 2026.10.15
-      - name: Install explicitly optional profile tools
+      - name: Install explicitly optional CPU tools
+        if: matrix.mode == 'cpu'
         run: task doctor -- --profiling
       - name: Configure sampling only on this disposable runner
+        if: matrix.mode == 'cpu'
         run: |
           sudo sysctl kernel.perf_event_paranoid=-1
           sudo sysctl kernel.kptr_restrict=0
@@ -64,13 +70,14 @@ jobs:
           ln -s "$perf_bin" "$RUNNER_TEMP/profile-bin/perf"
           echo "$RUNNER_TEMP/profile-bin" >> "$GITHUB_PATH"
       - name: Run bounded synthetic diagnostics (never AWS)
-        run: |
-          task profile:trace
-          task profile:heap
-          task profile:cpu
+        env:
+          PROFILE_MODE: ${{ matrix.mode }}
+          CARGO_INCREMENTAL: '0'
+          CARGO_BUILD_JOBS: '4'
+        run: task "profile:$PROFILE_MODE"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: synthetic-diagnostic-profiles
+          name: synthetic-diagnostic-profiles-${{ matrix.mode }}
           path: |
             profiles/**/trace.json
             profiles/**/heap.json

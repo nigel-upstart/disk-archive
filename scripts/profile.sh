@@ -20,11 +20,19 @@ if [[ $mode == console ]]; then
 	# Console is intentionally a distinct, explicitly unstable build.
 	export RUSTFLAGS="${RUSTFLAGS:-} --cfg tokio_unstable"
 fi
+if [[ $mode == cpu && $(uname -s) == Linux ]]; then
+	# Frame-pointer sampling records addresses, not raw DWARF stack-memory dumps.
+	export RUSTFLAGS="${RUSTFLAGS:-} -C force-frame-pointers=yes"
+fi
 # Native dependencies share the ordinary debug cache. No duplicate release profile.
 cargo build --locked -p disk-archive --example profile-corpus --features "$features"
 target_dir=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
 binary="$target_dir/debug/examples/profile-corpus"
 umask 077
+if [[ -L profiles ]]; then
+	printf 'Refusing symlink profile output directory.\n' >&2
+	exit 1
+fi
 mkdir -p profiles
 run_dir=$(mktemp -d "$root/profiles/$mode-XXXXXXXX")
 mkdir "$run_dir/home"
@@ -49,7 +57,7 @@ cpu)
 		;;
 	Linux)
 		# perf permissions must be configured explicitly by the caller/CI runner.
-		mise -E profiling exec -- flamegraph -o "$run_dir/cpu.svg" -- "${clean[@]}" "$binary" cpu "$run_dir"
+		(cd "$run_dir" && mise -E profiling exec -- flamegraph --cmd 'record -e cpu-clock:u -F 199 --call-graph fp' -o cpu.svg -- "${clean[@]}" "$binary" cpu "$run_dir")
 		python3 scripts/profile-validate.py svg "$run_dir/cpu.svg"
 		;;
 	*)
