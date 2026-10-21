@@ -12,10 +12,10 @@ In the legacy run the scan, redact and verify queues stayed saturated while the 
 
 | Option | Language / license | Status | Notes |
 | --- | --- | --- | --- |
-| **mongodb/kingfisher** | Rust, Apache-2.0 | Active (v2.14.0 released 2026-10-20) | The `kingfisher-bin` package exposes a `kingfisher` lib target (`src/lib.rs`). Uses `kingfisher-vectorscan`, a Hyperscan fork that needs a C/C++ build. Not on crates.io under that name (crates.io `kingfisher` 0.1.2 is unrelated), so use a git dependency pinned to a tag. The library API is likely not semver-stable. |
+| **mongodb/kingfisher** | Rust, Apache-2.0 | Active (v2.14.0 released 2026-10-20) | Prefer the versioned `kingfisher-scanner` embedding crate, with `kingfisher-core` and `kingfisher-rules` as needed. Use a git dependency pinned to an immutable commit; confirm crate versions, API stability, and `kingfisher-vectorscan` C/C++ prerequisites during the spike. Do not depend on the full `kingfisher-bin` application, which enables validation. |
 | praetorian-inc/noseyparker | Rust, Apache-2.0 | **Archived** | Not a candidate. |
 | sirwart/ripsecrets | Rust, MIT | Active, small | Narrow rule set aimed at pre-commit hooks. Too limited as the primary detector. |
-| In-house engine | Rust | — | `aho-corasick` keyword prefilter plus `regex::bytes::RegexSet` over a vendored rule set (Kingfisher rules under Apache-2.0 with NOTICE, or gitleaks rules under MIT). Pure Rust, no C++ toolchain, easy to fuzz. |
+| In-house engine | Rust | — | `aho-corasick` keyword prefilter plus `regex::bytes::RegexSet` over a vendored rule set (Kingfisher rules under Apache-2.0 with NOTICE, or gitleaks rules under MIT). `RegexSet` only selects rule indexes; a second pass with per-rule byte `Regex` (or a span-capable matcher) extracts `Finding.byte_range` and `Finding.raw`. Include both passes in the streaming and perf design. Pure Rust, no C++ toolchain, easy to fuzz. |
 
 ## Plan
 
@@ -26,8 +26,8 @@ In the legacy run the scan, redact and verify queues stayed saturated while the 
 ## Requirements
 
 - **API:** `scan(reader, consume_finding)` emits `Finding { rule_id, line, byte_range, raw }` incrementally through a bounded callback or channel. It is synchronous and CPU-bound and runs on the bounded blocking pool. Consumers must consume or redact each chunk's findings before reading more input; never accumulate all findings or raw values for a whole file.
-- **Streaming:** multi-GB files are scanned in chunks with overlap of at least the maximum rule match length (or memory-mapped), so memory stays bounded.
-- **No network, ever:** credential validation and live checks are disabled at compile time where possible. A test asserts the scanner makes no network calls.
+- **Streaming:** multi-GB files are scanned with bounded memory. Chunked rules declare a finite maximum match length and retain at least that much overlap, with absolute offsets and duplicate suppression. Rules without a finite maximum need a bounded stateful matcher; otherwise scanner configuration fails closed rather than silently omitting a rule. Boundary-spanning fixtures cover each matcher strategy. Memory mapping alone is not a bounded-memory guarantee.
+- **No network, ever:** exclude network-capable validation features at build time. For Kingfisher use `default-features = false`, omit `validation` and every `validation-*` compatibility alias, and check the resolved feature graph for accidental enablement. Keep the cross-check backend behind its separate explicit opt-in feature. A test also asserts the scanner makes no network calls.
 - **Secret hygiene:**
   - raw values are wiped with `zeroize` after redaction
   - they never go into logs, traces or state (ast-grep rule)
@@ -37,7 +37,7 @@ In the legacy run the scan, redact and verify queues stayed saturated while the 
 
 ## Detection parity
 
-- **Planted corpus:** a seeded synthetic corpus with fake secrets covering the detector families seen in agent and terminal logs (cloud keys, GitHub/GitLab tokens, Slack, JWTs, private keys, env-var assignments, DB URLs). Recall must be ≥ `trufflehog` (pinned version, `--no-verification`) for every family.
+- **Planted corpus:** a seeded synthetic corpus with fake secrets covering the detector families seen in agent and terminal logs (cloud keys, GitHub/GitLab tokens, Slack, JWTs, private keys, env-var assignments, DB URLs). Maintain an independent expected-finding manifest for every planted secret (family and location), and require complete detection for every family by the in-process scanner plus the redactor's extra rules. The pinned `trufflehog` comparison (`--no-verification`) is a parity report, not ground truth; shared misses cannot pass the manifest gate.
 - **False-positive bound:** each detector family must produce zero unexpected findings on curated benign fixtures (ordinary prose, code, URLs, and non-secret configuration). Report per-family false-positive counts alongside recall; regression tests must reject broad matches that would cause unrelated redaction or line deletion.
 - **Local-only coverage report:** a script maps the detector **names and counts** in an existing legacy state DB to the new rule IDs. No values are read, and the output is never committed.
 - The regex rules in the legacy redactor (env-var assignments and PEM blocks) stay as an extra layer next to the scanner.
@@ -45,7 +45,7 @@ In the legacy run the scan, redact and verify queues stayed saturated while the 
 ## Acceptance criteria
 
 - [ ] The ADR names the chosen scanner, its pinned revision and its native build prerequisites.
-- [ ] Hot-path spawn count is 0. The parity tests show recall ≥ `trufflehog` per detector family on the planted corpus.
+- [ ] Hot-path spawn count is 0. The independent manifest gate detects every planted secret per family; the pinned, no-verification `trufflehog` comparison is reported separately.
 - [ ] A fuzz target (cargo-fuzz) runs the scanner and redactor on arbitrary bytes with no panics and no input bytes leaking into logs.
 - [ ] A no-network test and a zeroize test pass.
 - [ ] The perf gate shows scan throughput (MiB/s) and instruction counts for the scanner kernel on the fixed corpus.
