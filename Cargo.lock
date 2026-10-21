@@ -27,6 +27,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "disk-archive-metrics"
+version = "0.1.0"
+
+[[package]]
 name = "disk-archive-verified"
 version = "0.1.0"
 
