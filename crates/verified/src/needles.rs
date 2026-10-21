@@ -17,6 +17,86 @@ pub struct NeedleError;
 /// The caller bounds total findings/bytes before constructing this set.
 pub struct NeedleSet(Vec<(Vec<u8>, Vec<u8>)>);
 
+impl Drop for NeedleSet {
+    fn drop(&mut self) {
+        // Best effort only: ordinary fill can be optimized away and does not wipe spare
+        // capacity, allocator copies, construction temporaries or borrowed finding text.
+        for (needle, replacement) in &mut self.0 {
+            needle.fill(0);
+            replacement.fill(0);
+        }
+    }
+}
+
+/// A size/overflow/allocation failure; never includes input or finding values.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RedactionLimit;
+
+// Own intermediate bytes so both success and error paths attempt best-effort wiping.
+struct WipeBuffer(Vec<u8>);
+
+impl Drop for WipeBuffer {
+    fn drop(&mut self) {
+        self.0.fill(0);
+    }
+}
+
+fn append_bounded(
+    output: &mut Vec<u8>,
+    bytes: &[u8],
+    max_bytes: usize,
+) -> Result<(), RedactionLimit> {
+    let size = output
+        .len()
+        .checked_add(bytes.len())
+        .ok_or(RedactionLimit)?;
+    if size > max_bytes {
+        return Err(RedactionLimit);
+    }
+    // Check before reserving or extending; no intermediate output can exceed the budget.
+    output
+        .try_reserve_exact(bytes.len())
+        .map_err(|_| RedactionLimit)?;
+    output.extend_from_slice(bytes);
+    Ok(())
+}
+
+/// Production replacement API: bound the input copy AND each intermediate output.
+/// Checks each extension before reserving memory, including replacement-marker amplification.
+/// The budget bounds logical bytes per buffer; two buffers may coexist during a pass,
+/// and allocator capacity/overhead is not a formal resident-memory bound.
+///
+/// # Errors
+/// Exceeding `max_bytes`, arithmetic overflow or allocation failure returns a static error,
+/// never partial successful output. Caller must block the file on error.
+pub fn replace_all_bounded(
+    line: &[u8],
+    needles: &NeedleSet,
+    max_bytes: usize,
+) -> Result<(Vec<u8>, usize), RedactionLimit> {
+    let mut output = WipeBuffer(Vec::new());
+    append_bounded(&mut output.0, line, max_bytes)?;
+    let mut count = 0_usize;
+    for (needle, replacement) in &needles.0 {
+        let mut rest = output.0.as_slice();
+        let mut next = WipeBuffer(Vec::new());
+        while let Some(pos) = rest
+            .windows(needle.len())
+            .position(|window| window == needle)
+        {
+            let head = rest.get(..pos).ok_or(RedactionLimit)?;
+            let tail = rest.get(pos + needle.len()..).ok_or(RedactionLimit)?;
+            append_bounded(&mut next.0, head, max_bytes)?;
+            append_bounded(&mut next.0, replacement, max_bytes)?;
+            rest = tail;
+            count = count.saturating_add(1);
+        }
+        append_bounded(&mut next.0, rest, max_bytes)?;
+        output = next;
+    }
+    Ok((std::mem::take(&mut output.0), count))
+}
+
 fn json_escaped(raw: &str) -> Vec<u8> {
     let mut out = String::new();
     for ch in raw.chars() {
@@ -96,6 +176,7 @@ impl NeedleSet {
     }
 }
 
+/// Unbounded reference/test API; production must use `replace_all_bounded`.
 /// Sequential non-overlapping byte replacement, longest needles first.
 /// A later replacement can reintroduce an earlier needle: always call `guard_line` LAST.
 #[must_use]
@@ -172,6 +253,38 @@ mod tests {
         assert!(!set.occurs_in(&guard_line(&out, &set).bytes));
         assert_eq!(guard_line(b"REDACTED", &set).bytes, [] as [u8; 0]);
         assert_eq!(guard_line(b"benign", &set).bytes, b"benign");
+        Ok(())
+    }
+
+    #[test]
+    fn bounded_intermediate_amplification() -> Result<(), NeedleError> {
+        let set = NeedleSet::from_findings(&[
+            FindingRaw {
+                label: "abcdef",
+                raw: "abcdefgh",
+            },
+            FindingRaw {
+                label: "x",
+                raw: "abcdef",
+            },
+        ])?;
+        assert_eq!(
+            replace_all_bounded(b"abcdefgh", &set, 20),
+            Err(RedactionLimit)
+        );
+        let expected = replace_all(b"abcdefgh", &set);
+        assert_eq!(
+            replace_all_bounded(b"abcdefgh", &set, expected.0.len()),
+            Ok(expected)
+        );
+        assert_eq!(
+            replace_all_bounded(b"too long", &set, 1),
+            Err(RedactionLimit)
+        );
+        assert_eq!(replace_all_bounded(b"", &set, 0), Ok((Vec::new(), 0)));
+        let mut bytes = Vec::new();
+        assert_eq!(append_bounded(&mut bytes, b"x", 0), Err(RedactionLimit));
+        assert_eq!(bytes.capacity(), 0); // Rejected before allocation, not after extension.
         Ok(())
     }
 

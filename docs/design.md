@@ -107,8 +107,12 @@ criteria; native build complexity alone is not grounds to abandon the preferred 
 finding order. The reference ignores values shorter than six Unicode scalar values, builds raw
 and Python-style JSON-escaped forms, includes sufficiently long multiline pieces (12 scalars),
 preserves the first label for duplicate needles, and uses stable longest-byte-first ordering.
-Only safe detector identifiers can enter replacement markers. Sequential replacements preserve
-legacy behavior, including replacement markers which can themselves match another needle.
+Only safe detector identifiers can enter replacement markers. Production calls
+`replace_all_bounded(line, needles, max_bytes)`, which checks the input copy and every extension
+before allocation, including intermediate marker amplification. Budget failure blocks the file;
+it never returns partial successful output. The budget is per logical buffer, not a resident-memory
+claim: old/new buffers coexist and allocators add overhead. The unbounded API is reference/test
+only. Sequential replacements preserve legacy behavior, including replacement markers which can themselves match another needle.
 Never log finding values, captures, input lines, needles, or secret-bearing error messages.
 
 For each line, first resume any active PEM block, then apply literal replacements. Core replaces
@@ -128,8 +132,10 @@ remaining findings, drop offending lines and re-scan once more; anything still d
 `blocked`, never uploaded or deleted. Empty/truncated/error scans cannot masquerade as clean.
 
 Secret ownership belongs to the adapter: short-lived values, zeroizing buffers where supported,
-no serialization of raw findings, and explicit review of upstream copies. The reference kernel's
-plain Vec/String buffers do not promise allocator-level zeroization. Full graph lifetime tests
+no serialization of raw findings, and explicit review of upstream copies. The reference kernel attempts ordinary `fill(0)` on owned NeedleSet fields and bounded-replacement
+intermediate buffers when dropped, but the compiler may erase those writes. This does not wipe
+spare capacity, construction temporaries, allocator copies or borrowed inputs, and is not a formal
+or allocator-level zeroization guarantee. Full graph lifetime tests
 and bounded-memory instrumentation remain wave-two scanner work, not claims from the spike.
 
 ## Upload evidence, state, and deletion
