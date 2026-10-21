@@ -46,7 +46,7 @@ impl Stage {
 /// `skip_all` prevents the future and its arguments from being formatted. The
 /// generated instrumentation enters/exits on poll, never across await boundaries.
 #[cfg_attr(feature = "profiling", tracing::instrument(
-    name = "stage", target = "disk_archive_profiling", skip_all,
+    name = "stage", target = "disk_archive_profiling::safe_stage", skip_all,
     fields(stage = stage.as_str(), file_id = file_id)
 ))]
 pub async fn stage<F: std::future::Future>(stage: Stage, file_id: u64, future: F) -> F::Output {
@@ -58,7 +58,7 @@ pub async fn stage<F: std::future::Future>(stage: Stage, file_id: u64, future: F
 /// Instrument actual synchronous work inside an already-admitted blocking worker.
 /// This does not spawn a task or hold an entered span across an await.
 #[cfg_attr(feature = "profiling", tracing::instrument(
-    name = "stage", target = "disk_archive_profiling", skip_all,
+    name = "stage", target = "disk_archive_profiling::safe_stage", skip_all,
     fields(stage = stage.as_str(), file_id = file_id)
 ))]
 pub fn work<R>(stage: Stage, file_id: u64, work: impl FnOnce() -> R) -> R {

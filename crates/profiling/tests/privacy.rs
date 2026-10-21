@@ -17,6 +17,10 @@ fn trace_is_valid_and_excludes_inputs_sdk_events_and_thread_names()
         .name(plant.into())
         .spawn(move || {
             let mut context = Context::from_waker(Waker::noop());
+            // Even same-crate and other first-party spans are outside the
+            // dedicated safe-stage target; a broad namespace filter would fail.
+            tracing::info_span!(target: "disk_archive_profiling", "stage", stage = plant, file_id = 999).in_scope(|| ());
+            tracing::info_span!(target: "disk_archive_scanner", "scan", input = plant).in_scope(|| ());
             let mut future = Box::pin(stage(Stage::Scan, 42, async move {
                 tracing::info!(target: "aws_sdk_s3", body = plant);
                 tracing::info!(target: "disk_archive_profiling", message = plant);

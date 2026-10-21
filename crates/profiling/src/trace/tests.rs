@@ -1,4 +1,5 @@
 use super::*;
+use std::io::Write as _;
 
 #[test]
 fn buffer_overflow_is_latched_and_never_writes_unbounded_data()

@@ -57,13 +57,28 @@ short-lived manual CI artifacts. Profiling is not permission to publish reposito
 
 ## Privacy and trust boundary
 
-The Chrome subscriber accepts only the helper's fixed stage spans. It ignores `RUST_LOG`, SDK
-targets, events and broad TRACE filters. Upstream tracing-chrome records OS thread names even
+The Chrome subscriber accepts only fixed stage spans on the dedicated
+`disk_archive_profiling::safe_stage` target, populated by the static `Stage`/`u64` helpers with
+`skip_all`. It ignores `RUST_LOG`, all other first-party namespaces, SDK targets, events and broad
+TRACE filters. Upstream tracing-chrome records OS thread names even
 when argument capture is disabled, so raw exporter JSON remains in memory until an allowlist
 rebuild replaces thread names, removes locations/unknown fields and retains only fixed stage
 labels and numeric ordinals. Raw exporter metadata is never an intermediate disk artifact. The
-raw buffer has a 16 MiB cap; overflow fails export closed. This is not a bound on the upstream
-exporter's channel, allocator overhead or total process RSS; the task corpus is bounded separately.
+raw buffer has a 16 MiB cap; overflow fails export closed. Pinned tracing-chrome 0.7.2 unwraps
+writer errors in its background thread, so its in-memory sink always acknowledges writes/flushes,
+including cap overflow or a poisoned buffer. `finish()` rejects poisoned, truncated or malformed
+captures with a static error before writing any artifact bytes. It never treats partial raw JSON
+as a complete trace. Final output write/flush failures also return a static error, not an unwind;
+an empty or partially written sanitized file is **not** a successful artifact. The Task must fail,
+and the manual workflow uploads only after a successful run and format validation.
+
+Call `finish()` only after the owned pipeline and detached cleanup have drained, not through an
+early `?` while source/root ownership is still needed. Capture failures do not propagate through
+instrumented work. Unit fault injection covers actual Chrome cap overflow, partial capture,
+zero/partial output writes and flush errors. The application-level detached-work/guard ordering
+regression remains pending integration after G releases ownership. This is not a bound on the
+upstream exporter's channel, allocator overhead or total process RSS; the task corpus is bounded
+separately.
 
 DHAT normally records the process command line. Its pinned public memory-export method is used
 to replace that field before writing JSON; no raw DHAT file is created. The wrapper deliberately
