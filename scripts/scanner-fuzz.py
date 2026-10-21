@@ -22,10 +22,14 @@ seeds.extend([
     "".join(f"\\u{ord(byte):04x}" for byte in token).encode(),
     "".join(f"%{ord(byte):02x}" for byte in token).encode(),
     base64.b64encode(token.encode()),
+    base64.urlsafe_b64encode(b"\xfb\xff\xff " + token.encode() + b" ").rstrip(b"="),
 ])
+wrapped = base64.b64encode(("x" * 48 + " " + token).encode())
+seeds.extend([b"secret_" + base64.b64encode(token.encode()), b"\r\n".join(wrapped[start:start + 76] for start in range(0, len(wrapped), 76))])
 for encoding in ("utf-16-le", "utf-16-be"):
     raw = token.encode(encoding)
-    seeds.extend([raw, base64.b64encode(raw)])
+    encoded = base64.b64encode(raw)
+    seeds.extend([raw, encoded, b"\r\n".join(encoded[start:start + 76] for start in range(0, len(encoded), 76))])
 for index, seed in enumerate(seeds):
     (corpus / str(index)).write_bytes(seed)
 

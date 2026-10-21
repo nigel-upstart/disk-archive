@@ -1,7 +1,10 @@
 //! Deterministic synthetic corpus and independently planted location manifest.
 use std::fmt::Write;
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use base64::{
+    Engine as _,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+};
 use zeroize::Zeroizing;
 
 /// The planting manifest is produced by the fixture builder, never by detection.
@@ -22,6 +25,17 @@ pub(crate) const BENIGN: &[&str] = &[
 ];
 
 pub(crate) type EncodedFixtures = Vec<(&'static str, Zeroizing<Vec<u8>>)>;
+
+fn wrap_base64(encoded: &[u8]) -> Zeroizing<Vec<u8>> {
+    let mut wrapped = Zeroizing::new(Vec::with_capacity(
+        encoded.len() + encoded.len().div_ceil(76) * 2,
+    ));
+    for line in encoded.chunks(76) {
+        wrapped.extend_from_slice(line);
+        wrapped.extend_from_slice(b"\r\n");
+    }
+    wrapped
+}
 
 pub(crate) fn encoding_variants() -> Result<EncodedFixtures, Box<dyn std::error::Error>> {
     let (input, manifest) = corpus();
@@ -58,10 +72,48 @@ pub(crate) fn encoding_variants() -> Result<EncodedFixtures, Box<dyn std::error:
         "base64-assignment",
         Zeroizing::new(format!("PAYLOAD={}\n", STANDARD.encode(value)).into_bytes()),
     ));
+    carriers.push((
+        "base64-prefixed",
+        Zeroizing::new(format!("secret_{}", STANDARD.encode(value)).into_bytes()),
+    ));
+    let mut padded = Zeroizing::new(vec![b'x'; 48]);
+    padded.push(b' ');
+    padded.extend_from_slice(value);
+    padded.extend_from_slice(b" public");
+    carriers.push((
+        "base64-wrapped",
+        wrap_base64(STANDARD.encode(&padded).as_bytes()),
+    ));
+    let mut binary = Zeroizing::new(vec![0xfb, 0xff, 0xff, b' ']);
+    binary.extend_from_slice(value);
+    binary.push(b' ');
+    let url_safe = Zeroizing::new(URL_SAFE_NO_PAD.encode(&binary));
+    if std::str::from_utf8(&binary).is_ok() || !url_safe.contains('-') || !url_safe.contains('_') {
+        return Err(
+            "synthetic URL-safe fixture must exercise binary context and both alphabet symbols"
+                .into(),
+        );
+    }
+    carriers.push((
+        "base64-url-binary",
+        Zeroizing::new(url_safe.as_bytes().to_vec()),
+    ));
     let text = std::str::from_utf8(value)?;
-    for (little, raw_name, b64_name, bom_name) in [
-        (true, "utf16le", "base64-utf16le", "utf16le-bom"),
-        (false, "utf16be", "base64-utf16be", "utf16be-bom"),
+    for (little, raw_name, b64_name, bom_name, wrapped_name) in [
+        (
+            true,
+            "utf16le",
+            "base64-utf16le",
+            "utf16le-bom",
+            "base64-utf16le-wrapped",
+        ),
+        (
+            false,
+            "utf16be",
+            "base64-utf16be",
+            "utf16be-bom",
+            "base64-utf16be-wrapped",
+        ),
     ] {
         let mut raw = Zeroizing::new(Vec::with_capacity(2 * text.len() + 2));
         for unit in text.encode_utf16() {
@@ -71,7 +123,9 @@ pub(crate) fn encoding_variants() -> Result<EncodedFixtures, Box<dyn std::error:
                 unit.to_be_bytes()
             });
         }
-        carriers.push((b64_name, Zeroizing::new(STANDARD.encode(&raw).into_bytes())));
+        let encoded = Zeroizing::new(STANDARD.encode(&raw));
+        carriers.push((wrapped_name, wrap_base64(encoded.as_bytes())));
+        carriers.push((b64_name, Zeroizing::new(encoded.as_bytes().to_vec())));
         carriers.push((raw_name, raw.clone()));
         let mut bom = Zeroizing::new(Vec::with_capacity(raw.len() + 2));
         bom.extend_from_slice(&if little { [0xff, 0xfe] } else { [0xfe, 0xff] });

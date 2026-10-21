@@ -11,7 +11,7 @@ use crate::{ScanError, Scanner};
 
 const CARRIER_BYTES: usize = 1024 * 1024;
 const DECODE_BYTES: usize = 64 * 1024 * 1024;
-const CANDIDATES: usize = 262_144;
+const CANDIDATES: usize = 1_048_576;
 const DEPTH: usize = 4;
 
 pub(crate) struct Preflight<'a> {
@@ -19,7 +19,9 @@ pub(crate) struct Preflight<'a> {
     native: BlockScanner<'a>,
     record: Zeroizing<Vec<u8>>,
     used: usize,
+    line_start: usize,
     utf16_carrier: bool,
+    budget: Budget,
 }
 
 impl<'a> Preflight<'a> {
@@ -30,7 +32,9 @@ impl<'a> Preflight<'a> {
                 .map_err(|_| ScanError::Engine)?,
             record: Zeroizing::new(vec![0; CARRIER_BYTES]),
             used: 0,
+            line_start: 0,
             utf16_carrier: false,
+            budget: Budget::default(),
         })
     }
 
@@ -43,7 +47,28 @@ impl<'a> Preflight<'a> {
             *self.record.get_mut(self.used).ok_or(ScanError::Budget)? = byte;
             self.used += 1;
             if byte == b'\n' && !self.utf16_carrier {
-                self.inspect_record()?;
+                let line = self
+                    .record
+                    .get(self.line_start..self.used)
+                    .ok_or(ScanError::Budget)?;
+                let base64_line = line.iter().any(|byte| is_base64(*byte))
+                    && line
+                        .iter()
+                        .all(|byte| is_base64(*byte) || b"=\r\n".contains(byte));
+                if base64_line {
+                    // Check each physical line AND the bounded joined run.
+                    // Independent unpadded carriers must not shift one another;
+                    // tiny wraps must not split a recoverable secret away.
+                    inspect(self.scanner, &mut self.native, line, 0, &mut self.budget)?;
+                    let padded_end =
+                        line.iter().rev().find(|byte| !b"\r\n".contains(byte)) == Some(&b'=');
+                    self.line_start = self.used;
+                    if padded_end {
+                        self.inspect_record()?;
+                    }
+                } else {
+                    self.inspect_record()?;
+                }
             }
         }
         Ok(())
@@ -54,21 +79,22 @@ impl<'a> Preflight<'a> {
     }
 
     fn inspect_record(&mut self) -> Result<(), ScanError> {
-        // Bound work per bounded carrier, not lifetime file length. This keeps
-        // ordinary multi-record input linear without a cumulative false block.
-        let mut budget = Budget::default();
+        // Line and joined-run checks share one budget for this bounded carrier,
+        // not a lifetime file counter. Ambiguous overlong base64 runs block.
         inspect(
             self.scanner,
             &mut self.native,
             self.record.get(..self.used).ok_or(ScanError::Budget)?,
             0,
-            &mut budget,
+            &mut self.budget,
         )?;
         self.record
             .get_mut(..self.used)
             .ok_or(ScanError::Budget)?
             .zeroize();
         self.used = 0;
+        self.line_start = 0;
+        self.budget = Budget::default();
         Ok(())
     }
 }
@@ -145,30 +171,53 @@ fn inspect(
             }
         }
     }
+    inspect_base64(scanner, native, bytes, depth, budget)
+}
+
+fn inspect_base64(
+    scanner: &Scanner,
+    native: &mut BlockScanner<'_>,
+    bytes: &[u8],
+    depth: usize,
+    budget: &mut Budget,
+) -> Result<(), ScanError> {
     let config = GeneralPurposeConfig::new()
         .with_decode_padding_mode(DecodePaddingMode::Indifferent)
         .with_decode_allow_trailing_bits(true);
-    for candidate in bytes.split(|byte| !is_base64(*byte)) {
-        // Short ordinary words cannot contain even a six-byte decoded value.
+    let engine = GeneralPurpose::new(&alphabet::STANDARD, config);
+    for candidate in bytes.split(|byte| !is_base64(*byte) && !b"\r\n".contains(byte)) {
         if candidate.len() < 8 {
             continue;
         }
-        budget.charge(candidate.len(), depth)?;
-        let table = if candidate.contains(&b'-') || candidate.contains(&b'_') {
-            &alphabet::URL_SAFE
-        } else {
-            &alphabet::STANDARD
-        };
-        let engine = GeneralPurpose::new(table, config);
-        let mut decoded = output(candidate.len());
-        // A fixed initialized output prevents reallocation/copies of secrets.
-        // Decode errors may still write bytes: Zeroizing wipes those too.
-        decoded.resize(candidate.len(), 0);
-        if let Ok(used) = engine.decode_slice(candidate, &mut decoded) {
-            // Wipe before shrinking; the decoder's unused tail is not exposed.
-            decoded.get_mut(used..).ok_or(ScanError::Budget)?.zeroize();
-            decoded.truncate(used);
-            check(scanner, native, &decoded, depth, budget)?;
+        let mut canonical = output(candidate.len());
+        for &byte in candidate {
+            let byte = match byte {
+                b'\r' | b'\n' => continue,
+                b'-' => b'+',
+                b'_' => b'/',
+                _ => byte,
+            };
+            append(&mut canonical, &[byte])?;
+        }
+        // Four bounded alignment probes preserve payloads absorbed by an
+        // identifier prefix, including mixed standard/URL-safe alphabets.
+        for offset in 0..4 {
+            let Some(candidate) = canonical.get(offset..).filter(|bytes| bytes.len() >= 8) else {
+                continue;
+            };
+            // A suffix may leave one impossible trailing sextet. Omitting only
+            // that sextet preserves all complete preceding credential bytes.
+            let end = candidate.len() - usize::from(candidate.len() % 4 == 1);
+            let candidate = candidate.get(..end).ok_or(ScanError::Budget)?;
+            budget.charge(candidate.len(), depth)?;
+            let mut decoded = output(candidate.len());
+            // Fully initialized even on partial decoder errors; no reallocation.
+            decoded.resize(candidate.len(), 0);
+            if let Ok(used) = engine.decode_slice(candidate, &mut decoded) {
+                decoded.get_mut(used..).ok_or(ScanError::Budget)?.zeroize();
+                decoded.truncate(used);
+                check(scanner, native, &decoded, depth, budget)?;
+            }
         }
     }
     Ok(())

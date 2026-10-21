@@ -60,6 +60,13 @@ fn encoded_only_secrets_block_at_every_read_boundary() -> Result<(), Box<dyn std
         br"\u0064emo_abcd1234efgh5678".to_vec(),
         b"%64emo_abcd1234efgh5678".to_vec(),
     ];
+    let mut binary = vec![0xfb, 0xff, 0xff, b' '];
+    binary.extend_from_slice(secret.as_bytes());
+    binary.push(b' ');
+    assert!(std::str::from_utf8(&binary).is_err());
+    let url_safe = URL_SAFE_NO_PAD.encode(&binary);
+    assert!(url_safe.contains('-') && url_safe.contains('_'));
+    carriers.push(url_safe.into_bytes());
     for little in [true, false] {
         let raw = utf16(secret, little);
         carriers.push(raw.clone());
@@ -92,6 +99,52 @@ fn encoded_only_secrets_block_at_every_read_boundary() -> Result<(), Box<dyn std
     Ok(())
 }
 
+fn wrapped(bytes: &[u8], width: usize, crlf: bool) -> Vec<u8> {
+    let mut output = Vec::new();
+    for line in bytes.chunks(width) {
+        output.extend_from_slice(line);
+        output.extend_from_slice(if crlf { b"\r\n" } else { b"\n" });
+    }
+    output
+}
+
+#[test]
+fn wrapped_and_identifier_prefixed_carriers_do_not_certify_clean()
+-> Result<(), Box<dyn std::error::Error>> {
+    let secret = "demo_abcd1234efgh5678";
+    let text = format!("{} {secret} {}", "x".repeat(48), "z".repeat(20));
+    for chunk in [1, 31, 64 * 1024] {
+        let scanner = scanner(chunk)?;
+        for width in [1, 4, 8, 64, 76] {
+            for crlf in [false, true] {
+                let carrier = wrapped(STANDARD.encode(&text).as_bytes(), width, crlf);
+                assert_eq!(
+                    scanner.scan(carrier.as_slice(), |_| Ok(())),
+                    Err(ScanError::UnsupportedEncoding)
+                );
+            }
+        }
+        for prefix in 0..16 {
+            for encoded in [STANDARD.encode(secret), URL_SAFE_NO_PAD.encode(secret)] {
+                let carrier = format!("{}_{encoded}", "p".repeat(prefix));
+                assert_eq!(
+                    scanner.scan(carrier.as_bytes(), |_| Ok(())),
+                    Err(ScanError::UnsupportedEncoding)
+                );
+            }
+        }
+        for little in [true, false] {
+            let raw = utf16(&text, little);
+            let carrier = wrapped(STANDARD.encode(&raw).as_bytes(), 76, true);
+            assert_eq!(
+                scanner.scan(carrier.as_slice(), |_| Ok(())),
+                Err(ScanError::UnsupportedEncoding)
+            );
+        }
+    }
+    Ok(())
+}
+
 #[test]
 fn benign_encoded_values_are_not_blanket_rejected() -> Result<(), Box<dyn std::error::Error>> {
     let scanner = scanner(7)?;
@@ -115,6 +168,12 @@ fn benign_encoded_values_are_not_blanket_rejected() -> Result<(), Box<dyn std::e
             assert_eq!(scanner.scan(carrier.as_slice(), |_| Ok(()))?.findings, 0);
         }
     }
+    let benign_binary = URL_SAFE_NO_PAD.encode(b"\xfb\xff\xff public documentation only");
+    assert!(benign_binary.contains('-') && benign_binary.contains('_'));
+    assert_eq!(
+        scanner.scan(benign_binary.as_bytes(), |_| Ok(()))?.findings,
+        0
+    );
     assert_eq!(
         scanner
             .scan(&br"\uD83D\uDE00 public \u03bb"[..], |_| Ok(()))?
@@ -142,6 +201,13 @@ fn depth_and_carrier_budgets_fail_closed_with_static_errors()
         scanner.scan(carrier.as_slice(), |_| Ok(())),
         Err(ScanError::Budget)
     );
+    // A long run consisting ONLY of base64-alphabet lines is an ambiguous
+    // encoded carrier, not ordinary prose: enforce the same 1 MiB carrier cap.
+    let carrier = b"ordinary\n".repeat(150_000);
+    assert_eq!(
+        scanner.scan(carrier.as_slice(), |_| Ok(())),
+        Err(ScanError::Budget)
+    );
     let carrier = b"a\0\n".repeat(400_000);
     assert_eq!(
         scanner.scan(carrier.as_slice(), |_| Ok(())),
@@ -160,7 +226,7 @@ fn depth_and_carrier_budgets_fail_closed_with_static_errors()
 fn ordinary_records_do_not_exhaust_a_lifetime_decode_budget()
 -> Result<(), Box<dyn std::error::Error>> {
     let scanner = scanner(64 * 1024)?;
-    let input = b"ordinary\n".repeat(262_145);
+    let input = b"ordinary prose\n".repeat(262_145);
     assert_eq!(scanner.scan(input.as_slice(), |_| Ok(()))?.findings, 0);
     Ok(())
 }

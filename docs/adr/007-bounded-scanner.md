@@ -102,8 +102,13 @@ Matching conservatively reports syntax: online validation, high-level path/conte
 dependency suppression and lossy capture-map/filter construction are not enabled.
 Known recoverable encoded secrets must not pass merely because direct scanning
 misses them. Preflight probes JSON Unicode/ordinary escapes, percent escapes,
-standard/URL-safe base64 candidates (at least eight carrier bytes, with or without
-padding), and BOM/NUL-indicated UTF16LE/BE at both byte alignments. Standard-library
+standard/URL-safe base64 candidates (at least eight canonical alphabet bytes,
+with or without padding), and BOM/NUL-indicated UTF16LE/BE at both byte alignments.
+Base64-only physical lines are also inspected as one bounded joined run, stripping
+CR/LF so wrapping cannot split a secret. Each line is independently checked too.
+Four fixed alphabet-alignment probes preserve payloads absorbed by identifier
+prefixes; one impossible trailing sextet may be omitted, never complete payload
+bytes. Normalization maps URL-safe characters to their standard-alphabet values. Standard-library
 checked UTF16 conversion uses replacement separators for invalid units; it does
 not delete them. Base64-of-UTF16 and bounded combinations use the same probes.
 Every decoded candidate is searched by the **same native selector and original
@@ -116,14 +121,21 @@ a direct secret with unrelated escapes too; allowing that case requires proper
 transformed-span provenance, not a literal-presence shortcut. Issue #18 retains
 offset-aware redaction work, not permission to upload known secrets.
 
-Carrier and decoded-buffer size is at most 1 MiB each. Plain records are checked
-at LF/EOF; NUL-bearing raw carriers retain adjacent physical lines together until
-EOF, blocking rather than truncating beyond the carrier cap. Each bounded carrier
-allows 262,144 decode attempts, 64 MiB of examined candidate bytes and four decoding
-levels. Fresh budgets per carrier keep ordinary multi-record files linear instead
-of accumulating false refusals with file length. Exceeding any limit returns `Budget`, never clean success. Clean decoded
-values and ordinary base64-looking text are not blanket rejected. These bounded
-probes are not an arbitrary/universal decoder-completeness claim.
+Carrier, canonical encoded buffer and decoded-buffer sizes are at most 1 MiB
+each. Plain records are checked at LF/EOF; NUL-bearing UTF16 and consecutive
+base64-only lines retain their bounded carrier together. Exceeding the cap blocks,
+never truncates and certifies a prefix. A long run of single base64-alphabet words
+can be an ambiguous wrapped carrier even if intended as plaintext; beyond 1 MiB it
+is retained with `Budget`. Ordinary multi-record prose does not accumulate lifetime
+work limits. This availability tradeoff avoids silently uploading recoverable
+wrapped secrets; offset-aware/provenance work remains #18.
+
+Each bounded carrier allows 1,048,576 decode attempts, 64 MiB of examined candidate
+bytes and four decoding levels. Physical-line and joined-run probes share that
+budget. The larger attempt cap admits dense bounded records while byte/depth caps
+remain fixed. Exceeding any limit returns `Budget`, never clean success. Clean
+base64/UTF16 within these caps is not blanket rejected. These bounded probes are
+not an arbitrary/universal decoder-completeness claim.
 
 All byte buffers and UTF16-unit vectors are zeroizing, sized before sensitive
 writes, and never reallocate. Base64 decodes into a fully initialized full-length
