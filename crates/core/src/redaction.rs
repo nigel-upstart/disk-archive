@@ -36,6 +36,10 @@ pub struct Limits {
     pub max_findings: usize,
     /// Total UTF-8 raw-value bytes across all callbacks.
     pub max_finding_bytes: usize,
+    /// Conservative derived-needle candidates, including duplicates and line pieces.
+    pub max_derived_needles: usize,
+    /// Logical bytes copied by the literal kernel per input line (not CPU instructions).
+    pub max_literal_copy_bytes: usize,
     /// Number of line numbers in the fallback pass.
     pub max_drop_lines: usize,
 }
@@ -47,6 +51,8 @@ impl Default for Limits {
             max_output_line_bytes: 4_194_304,
             max_findings: 256,
             max_finding_bytes: 262_144,
+            max_derived_needles: 256,
+            max_literal_copy_bytes: 67_108_864,
             max_drop_lines: 4096,
         }
     }
@@ -75,6 +81,7 @@ pub struct PlanBuilder {
     limits: Limits,
     findings: Vec<OwnedFinding>,
     raw_bytes: usize,
+    derived_needles: usize,
     poisoned: bool,
 }
 
@@ -89,6 +96,8 @@ impl PlanBuilder {
             limits.max_output_line_bytes,
             limits.max_findings,
             limits.max_finding_bytes,
+            limits.max_derived_needles,
+            limits.max_literal_copy_bytes,
             limits.max_drop_lines,
         ]
         .contains(&0)
@@ -99,6 +108,7 @@ impl PlanBuilder {
             limits,
             findings: Vec::new(),
             raw_bytes: 0,
+            derived_needles: 0,
             poisoned: false,
         })
     }
@@ -127,6 +137,27 @@ impl PlanBuilder {
             self.poisoned = true;
             return Err(RedactError::Invalid);
         }
+        // Bound BEFORE copying or invoking the kernel's quadratic deduplication.
+        // >=6 scalars: two full forms plus at most 1 + raw line delimiters pieces.
+        // Python ensure_ascii JSON has no physical line delimiters; its one piece
+        // duplicates its full form. Count all controls (even non-delimiters) to
+        // overestimate safely, and count duplicates/short pieces conservatively.
+        let candidates = if finding.raw.chars().take(6).count() < 6 {
+            Some(0)
+        } else {
+            finding
+                .raw
+                .chars()
+                .filter(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}'))
+                .count()
+                .checked_add(3)
+        };
+        let derived = candidates.and_then(|n| self.derived_needles.checked_add(n));
+        if derived.is_none_or(|n| n > self.limits.max_derived_needles) {
+            self.poisoned = true;
+            return Err(RedactError::Budget);
+        }
+        self.derived_needles = derived.ok_or(RedactError::Budget)?;
         self.raw_bytes = total.ok_or(RedactError::Budget)?;
         self.findings.push(OwnedFinding {
             label: finding.label.to_owned(),
@@ -170,6 +201,16 @@ impl PlanBuilder {
             needles::NeedleSet::from_findings(&borrowed).map_err(|_| RedactError::Invalid)?;
         Ok(RedactionPlan {
             limits: self.limits,
+            // Initial copy + one output rebuild per actual needle. Using the
+            // conservative candidate count and a reduced intermediate-buffer cap
+            // bounds literal copy traffic BEFORE allocation, including expansion.
+            literal_output_limit: self.limits.max_output_line_bytes.min(
+                self.limits.max_literal_copy_bytes
+                    / self
+                        .derived_needles
+                        .checked_add(1)
+                        .ok_or(RedactError::Budget)?,
+            ),
             needles,
             drops,
             inline: INLINE.as_ref().map_err(|e| *e)?,
@@ -181,6 +222,7 @@ impl PlanBuilder {
 /// Reusable compiled plan; no Debug or serialization. Scanning remains a separate stage.
 pub struct RedactionPlan {
     limits: Limits,
+    literal_output_limit: usize,
     needles: needles::NeedleSet,
     drops: BTreeSet<u64>,
     inline: &'static Regex,
@@ -246,7 +288,7 @@ impl RedactionPlan {
         state: &mut pem::PemState,
     ) -> Result<(Vec<u8>, u64), RedactError> {
         let (line, count) =
-            needles::replace_all_bounded(line, &self.needles, self.limits.max_output_line_bytes)
+            needles::replace_all_bounded(line, &self.needles, self.literal_output_limit)
                 .map_err(|_| RedactError::Budget)?;
         let line = Zeroizing::new(line);
         let mut count = u64::try_from(count).map_err(|_| RedactError::Budget)?;

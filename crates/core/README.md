@@ -23,6 +23,8 @@ Required: `DISK_ARCHIVE_BUCKET`, `DISK_ARCHIVE_PREFIX`. Optional:
 | `MAX_OUTPUT_LINE_BYTES` | 4 MiB; max 64 MiB (includes intermediates) |
 | `MAX_FINDINGS` | 256 raw variants; max 4096 |
 | `MAX_FINDING_BYTES` | 256 KiB total raw UTF-8; max 1 MiB |
+| `MAX_DERIVED_NEEDLES` | 256 conservative candidates; max 1024 |
+| `MAX_LITERAL_COPY_BYTES` | 64 MiB literal copy traffic per line; max 1 GiB |
 | `MAX_DROP_LINES` | 4096; max 65536 |
 
 All budgets are positive. Empty optional values are invalid. Relative setting
@@ -35,7 +37,16 @@ Feed `&FindingRaw { label, raw }` into `PlanBuilder::push` from F's bounded
 scanner callback; feed raw-v2 separately in original order. Never accumulate an
 unbounded whole-file `Vec<Finding>`. A failed callback poisons the builder even if
 a caller accidentally ignores the error. Stop scanning on budget exhaustion and
-block the file. Labels are safe ASCII, at most 64 bytes. Raw accumulator, physical-line and core-owned intermediate
+block the file. Before kernel construction, derived candidates are conservatively
+counted as two full forms plus raw line pieces (all controls count as delimiters;
+short/duplicate pieces still consume budget). JSON ensure_ascii has no physical
+line delimiters, so its only piece duplicates its full form. This caps quadratic
+kernel deduplication and the number of replacement passes, not just stored bytes.
+The literal intermediate cap is additionally reduced to copy_budget/(candidates+1):
+one initial copy plus one rebuild per needle cannot exceed the logical literal
+copy-traffic budget. An input/output exceeding that reduced cap blocks. This is
+not a CPU-instruction/time theorem or a budget for regex work/comparison lengths.
+Labels are safe ASCII, at most 64 bytes. Raw accumulator, physical-line and core-owned intermediate
 buffers use `zeroize`. The standard-library reader buffer is not zeroized; the
 dependency-free kernel attempts best-effort Drop wiping only, which may be
 optimized away and does **not** promise allocator-level zeroization. No raw-bearing type implements Debug

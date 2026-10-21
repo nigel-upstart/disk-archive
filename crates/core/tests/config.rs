@@ -69,6 +69,10 @@ fn required_settings_and_invalid_values_fail_closed() {
         "DISK_ARCHIVE_MAX_OUTPUT_LINE_BYTES=67108865",
         "DISK_ARCHIVE_MAX_FINDINGS=0",
         "DISK_ARCHIVE_MAX_FINDING_BYTES=0",
+        "DISK_ARCHIVE_MAX_DERIVED_NEEDLES=0",
+        "DISK_ARCHIVE_MAX_DERIVED_NEEDLES=1025",
+        "DISK_ARCHIVE_MAX_LITERAL_COPY_BYTES=0",
+        "DISK_ARCHIVE_MAX_LITERAL_COPY_BYTES=1073741825",
         "DISK_ARCHIVE_MAX_DROP_LINES=0",
     ] {
         assert!(load(&base(extra)).is_err(), "{extra}");

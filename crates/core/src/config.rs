@@ -111,6 +111,8 @@ impl Config {
             "MAX_OUTPUT_LINE_BYTES",
             "MAX_FINDINGS",
             "MAX_FINDING_BYTES",
+            "MAX_DERIVED_NEEDLES",
+            "MAX_LITERAL_COPY_BYTES",
             "MAX_DROP_LINES",
         ];
         if values.keys().any(|k| {
@@ -158,6 +160,12 @@ impl Config {
                 )?,
                 max_findings: settings.size("MAX_FINDINGS", 256, 4096)?,
                 max_finding_bytes: settings.size("MAX_FINDING_BYTES", 262_144, 1_048_576)?,
+                max_derived_needles: settings.size("MAX_DERIVED_NEEDLES", 256, 1024)?,
+                max_literal_copy_bytes: settings.size(
+                    "MAX_LITERAL_COPY_BYTES",
+                    67_108_864,
+                    1_073_741_824,
+                )?,
                 max_drop_lines: settings.size("MAX_DROP_LINES", 4096, 65_536)?,
             },
         })
