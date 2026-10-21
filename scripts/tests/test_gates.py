@@ -130,6 +130,32 @@ class PolicyTests(unittest.TestCase):
             policy.check_workspace()
 
 
+class CacheKeyTests(unittest.TestCase):
+    def test_dynamic_cpu_fields_do_not_break_safe_cache_reuse(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binary = root / "bin"
+            binary.mkdir()
+            for name in ("rustc", "cargo", "cc", "c++", "cmake"):
+                path = binary / name
+                path.write_text("#!/bin/sh\nprintf 'pinned-compiler\\n'\n")
+                path.chmod(0o700)
+            cpu = binary / "lscpu"
+            cpu.write_text("#!/bin/sh\nprintf 'Architecture: x86_64\\nVendor ID: GenuineIntel\\nModel name: fixed\\nFlags: %s\\nCPU MHz: %s\\n' \"$MOCK_FLAGS\" \"$MOCK_MHZ\"\n")
+            cpu.chmod(0o700)
+            sha = binary / "sha256sum"
+            sha.write_text("#!/usr/bin/env python3\nimport hashlib,sys\nprint(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())\n")
+            sha.chmod(0o700)
+            output = root / "output"
+            environment = {**os.environ, "PATH": str(binary) + os.pathsep + os.environ["PATH"], "GITHUB_OUTPUT": str(output), "MOCK_FLAGS": "avx2 sse4_2"}
+            def digest(mhz, flags):
+                output.write_text("")
+                subprocess.run(["bash", str(ROOT / "scripts/ci-cache-key.sh"), "workspace"], env={**environment, "MOCK_MHZ": mhz, "MOCK_FLAGS": flags}, check=True)
+                return output.read_text()
+            self.assertEqual(digest("1000", "avx2 sse4_2"), digest("3200", "avx2 sse4_2"))
+            self.assertNotEqual(digest("1000", "avx2 sse4_2"), digest("1000", "sse4_2"))
+
+
 class QuietTests(unittest.TestCase):
     def run_quiet(self, root, *args, **environment):
         env = {**os.environ, "TASK_OUTPUT_VERBOSE": "0", **environment}

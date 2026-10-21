@@ -13,7 +13,7 @@ digest=$(
 		cc --version
 		c++ --version
 		cmake --version
-		lscpu
+		LC_ALL=C lscpu | awk -F: '/^(Architecture|Vendor ID|Model name|Flags):/ {gsub(/[[:space:]]+/, " ", $2); print $1 ":" $2}'
 		printf '%s\n' "${RUSTFLAGS-}" "${CFLAGS-}" "${CXXFLAGS-}" "${VECTORSCAN_OFFLINE-}"
 	} | sha256sum | cut -d ' ' -f 1
 )
