@@ -31,7 +31,7 @@ tasks:
   supply-chain:
     cmds: ['{{.QUIET}} bash scripts/gates.sh supply-chain']
   parity:
-    cmds: ["bash scripts/quiet-run.sh --success-pattern 'not implemented' -- bash scripts/gates.sh parity"]
+    cmds: ['{{.QUIET}} bash scripts/gates.sh parity']
   hook:commit:
     cmds:
       - task: fmt
