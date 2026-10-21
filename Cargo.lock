@@ -1049,6 +1049,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "disk-archive-metrics"
+version = "0.1.0"
+
+[[package]]
 name = "disk-archive-storage"
 version = "0.1.0"
 dependencies = [
