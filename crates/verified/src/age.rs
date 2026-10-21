@@ -1,6 +1,10 @@
 //! Fail-closed timestamp comparison without machine-integer overflow.
 
+#[cfg(verus_only)]
+use vstd::prelude::*;
+
 /// Unix timestamp with normalized nanoseconds.
+#[cfg_attr(verus_only, verifier::verify)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Timestamp {
     /// Signed seconds since the Unix epoch.
@@ -12,10 +16,12 @@ pub struct Timestamp {
 impl Timestamp {
     /// Whether the subsecond part is normalized.
     #[must_use]
+    #[cfg_attr(verus_only, verus_spec(r => ensures r == (self.nanos < 1_000_000_000)))]
     pub const fn is_valid(self) -> bool {
         self.nanos < 1_000_000_000
     }
 
+    #[cfg_attr(verus_only, verus_spec(r => ensures r == self.secs as int * 1_000_000_000 + self.nanos as int))]
     const fn total_nanos(self) -> i128 {
         (self.secs as i128) * 1_000_000_000 + self.nanos as i128
     }
@@ -24,6 +30,7 @@ impl Timestamp {
 /// Strictly older than the cutoff; equality and malformed times fail closed.
 /// The full i64 seconds and u64 age domains fit in i128 nanoseconds.
 #[must_use]
+#[cfg_attr(verus_only, verus_spec(r => ensures r == (now.nanos < 1_000_000_000 && mtime.nanos < 1_000_000_000 && mtime.secs as int * 1_000_000_000 + (mtime.nanos as int) < now.secs as int * 1_000_000_000 + now.nanos as int - min_age_secs as int * 1_000_000_000)))]
 pub const fn is_older_than(now: Timestamp, mtime: Timestamp, min_age_secs: u64) -> bool {
     now.is_valid()
         && mtime.is_valid()

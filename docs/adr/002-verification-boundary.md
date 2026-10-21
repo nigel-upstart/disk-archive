@@ -21,10 +21,12 @@ properties. A small production-connected kernel separates these concerns.
 Keep `crates/verified` free of all normal, build and dev dependencies. Prove the actual functions
 called by core/adapters: strict age cutoff arithmetic, relative-path encoding injectivity,
 literal-needle output guards, PEM state transitions, legal state progression and source/evidence
-comparisons for deletion. The ordinary Rust reference APIs in this wave are unproved; the
-feasibility file is intentionally labelled as disconnected scaffolding for the verifier.
+comparisons for deletion. Ordinary Rust runtime functions carry conditional Verus specifications;
+the proof driver targets their actual `src/lib.rs`. Ghost-only encoding lemmas are connected to
+the runtime encoder's postcondition, never substituted executable copies. See the
+[proof inventory](../design.md#proof-inventory-and-exclusions) for tested-only exclusions.
 
-The later proof must cover the production function or a checked extraction consumed by it.
+Every proof claim must cover the production function itself.
 No `assume`, `admit` or external-body escape may silently bridge proof and implementation.
 Runtime inputs stay validated: normalized timestamps, valid paths, nonempty needles, trusted
 hash/stat/HEAD adapters, and bounded resource budgets.

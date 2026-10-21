@@ -1,6 +1,6 @@
 # Archiver design and safety boundary
 
-**Owner:** Maintainers · **Status:** Accepted direction; reference APIs, not production implementation
+**Owner:** Maintainers · **Status:** Verified kernel contracts; I/O adapters remain integration work
 **Last updated:** 2026-10-21 · **Links:** [decisions](adr/001-rust-and-verus.md), [dependency policy](dependencies.md)
 
 ## Scope and architecture
@@ -13,12 +13,12 @@ operates against production roots during development. Real S3 smoke tests requir
 approval and synthetic inputs. The repository remains private until a full-history audit; this
 document is not authorization to publish it.
 
-The synchronous, dependency-free `disk-archive-verified` crate contains reference functions for
-age comparison, key encoding, literal needle replacement, PEM state, lifecycle transitions, and
-upload/delete capabilities. They are **unproved reference implementations** in wave one. The
-separate `proofs/feasibility.rs` establishes that the pinned verifier works; it does not prove the
-reference crate or the entire archiver. Wave two replaces or annotates the actual kernels with
-specifications and proofs. A disconnected proof of a similar algorithm cannot satisfy that work.
+The synchronous, dependency-free `disk-archive-verified` crate contains ordinary Rust functions
+for age comparison, key encoding, literal needle replacement, PEM state, lifecycle transitions,
+and upload/delete capabilities. Conditional `cfg_attr(verus_only, verus_spec(...))` contracts
+verify the **same source used by callers**, not generated replacements or a similar algorithm.
+Only annotated functions carry proof claims; unannotated functions remain tested Rust. The
+proof inventory and trusted boundary below distinguish those claims from end-to-end safety.
 
 `crates/core` owns configuration, scanner adapters, finding lifetime management, and the streaming
 redactor. `crates/archiver` owns CLI, Tokio scheduling, filesystem adapters, SQLite, and the S3
@@ -125,7 +125,7 @@ state primitive. Use the sanitized Python goldens for ordering and boundary pari
 Run `guard_line` **after every other transformation**. If a supplied literal needle remains,
 drop the line; emit the line marker only if that marker is also safe, otherwise emit empty
 bytes. Even newline could be part of a needle, so newline is not an unconditional safe fallback.
-The future postcondition is per-line: no supplied literal occurs in the emitted line. Joining
+The proved postcondition is per-line: no supplied literal occurs in the emitted line. Joining
 lines can create a cross-boundary needle, and the supplied set does not cover undiscovered
 secrets. The mandatory whole-output detector re-scan therefore remains part of acceptance. On
 remaining findings, drop offending lines and re-scan once more; anything still detected is
@@ -172,14 +172,50 @@ not by jumping directly from an old state to deletion.
 ## Verification, rollout, and open integration work
 
 The stable workspace pin is independent of Verus's Rust pin. The verified crate has no normal,
-build, or dev dependencies. `scripts/verus-install.sh` installs checksummed Verus and dedicated
-rustup under the XDG data directory without changing profiles. `scripts/verus-verify.sh` fails
-when missing, proves the small feasibility functions, rejects a deliberately false postcondition,
-and compiles/tests reference APIs with the pinned compiler. CI must install before verification.
-This is an evidence-based **go** for Verus, not completion of wave-two proofs.
+build, dev, or target dependencies. `scripts/verus-install.sh` installs checksummed Verus and
+dedicated rustup under the XDG data directory without changing profiles. `task verify` invokes
+`scripts/verus-verify.sh`, which requires that isolated installation, runs the production-source
+proof driver, and compiles/tests the same source with the Verus-pinned ordinary Rust compiler.
+The normal workspace compiler independently runs tests, lints, and coverage. Installed pre-push
+hooks run `task check`, including this proof suite; both CI jobs install Verus unconditionally
+and fail if installation or proof execution is missing. No workspace build substitutes for proofs.
 
-Wave two adds specs/proofs to the actual production-called kernels, tests adapters against these
-APIs, and closes scanner resource/privacy gaps. Wave three first establishes an S3 mock seam,
+### Proof inventory and exclusions
+
+| Actual source | Proved contract | Outside the theorem |
+| --- | --- | --- |
+| `age.rs` | Strict cutoff equals mathematical nanosecond comparison over the full i64/u64 input domains; invalid nanoseconds fail closed; no arithmetic overflow. | Clock/stat accuracy, checked days-to-seconds conversion in core. |
+| `key.rs`, `key_model.rs` | Every successful production `encode_key` equals the versioned byte-sequence model and is <=1024 bytes. The model has a left inverse, hence encoding is injective for a fixed prefix. Loop indexing and arithmetic are in range. | Prefix/path-validation completeness and the runtime `decode_rel` inverse are tested, not proved; different configured prefixes can collide; no cross-prefix namespace isolation is proved. |
+| `bytes.rs`, `needles.rs` | Literal occurrence matches a quantified byte-subsequence predicate; final `guard_line` output contains none of the set's nonempty literals, including marker collisions. | Finding construction, JSON escaping, longest-first replacement and `replace_all_bounded` allocation limits are tested, not proved. Scanner completeness, secret erasure, cross-line concatenation, and whole-output cleanliness are not theorems. |
+| `pem.rs` | Returned marker spans have the uppercase/space delimiter grammar and valid bounds. Enter activates state; active resume emits empty bytes while active, or a suffix following a valid END when leaving. | Completeness/first-match selection, default-state derivation, inline PEM replacement and environment-assignment detection are tested, not proved. |
+| `lifecycle.rs` | Exact legal state graph; successful upload authority requires matching key/length/hashes/original metadata/AES256 and valid timestamps. Successful deletion authorization binds the consumed token and current identity to equal device/inode/size/mtime/ctime/hash. | Hash collision resistance, authentic SDK/HEAD evidence, configured bucket/version binding, no-follow source opens, exclusive namespace ownership, actual unlink and crash recovery. |
+
+Prefix allocation is an adapter obligation: `archive` + `other/v1/file` and
+`archive/v1/other` + `file` both produce `archive/v1/other/v1/file.gz`. Distinct valid
+prefixes do not establish disjoint object namespaces. Adapters must enforce non-overlapping
+key ownership across configurations/writers or use separate buckets; fixed-prefix injectivity
+alone does not prevent overwrites from another configuration.
+
+`key_model.rs` is ghost-only: its inverse/injectivity lemmas are linked to the successful runtime
+encoder's postcondition. It is not a duplicate executable encoder. The other erased blocks contain
+only ghost specs/proofs/imports; executable functions never branch on `verus_only`. The driver's
+conservative source-policy checks reject erased executable alternatives and proof escape hatches.
+This check is a repository regression guard, not a general Rust parser or a security sandbox.
+Verus runs with `--no-cheating` over the entire crate's selected annotated functions; unannotated
+Rust is **not** silently included in the proof claim. The trusted computing base includes Verus,
+its vstd library specifications, the SMT solver, Rust/LLVM, and the host/toolchain installers.
+
+The recovered baseline is **51 verified, 0 errors**. The driver enforces a minimum inventory of
+51 and rejects seven independent executable mutations: cutoff equality, a percent-encoding
+nibble, inverted needle guard, disabled PEM entry, bypassed source identity, missing SSE evidence,
+and an illegal Verified-to-Deleted edge. Each must produce an actual proof failure, not a
+compiler/translation/setup error. An additional cfg-divergence control must fail source policy.
+Mutants are temporary source copies used only for negative verification; production proof input
+is always the real `crates/verified/src/lib.rs`. Unit tests cover gate failure modes and source
+preservation; the solver controls run on every `task verify`, including CI and pre-push.
+
+Adapter tests and scanner resource/privacy work remain separate from kernel proofs. Wave three
+first establishes an S3 mock seam,
 then integrates filesystem, state and transport adapters with fault injection at every durable
 boundary. Golden parity and no-write dry-run tests precede real input use. Independent review
 covers delete safety, redaction and cancellation. Performance baselines are recorded only on the
