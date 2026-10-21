@@ -784,6 +784,66 @@ fn read_file(path: PathBuf) -> Result<Vec<u8>, Error> {
 }
 
 #[tokio::test]
+async fn removed_root_retains_its_intent_without_blocking_other_roots()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = Fixture::new(1)?;
+    let store = Arc::new(fixture.store());
+    store.fault.store(1, Ordering::SeqCst);
+    let services = fixture.services(store.clone(), Arc::new(SyntheticScanner))?;
+    assert!(
+        pipeline::run(
+            Arc::new(fixture.config()?),
+            options(),
+            services,
+            CancellationToken::new()
+        )
+        .await?
+        .cancelled
+    );
+    let old_path = fixture.root.join("0.jsonl");
+    let old_source = tokio::fs::read(&old_path).await?;
+    let pool = BlockingPool::new(1)?;
+    let database = fixture.work.join("state.sqlite");
+    let previous = pool
+        .run(&CancellationToken::new(), move || read_rows(database))
+        .await?;
+    let old = previous.first().ok_or(Error::Worker)?;
+    assert!(old.expected.is_some());
+    let record = serde_json::to_vec(old)?;
+    let key = old.key.clone();
+    let new_root = fixture.base.join("new-root");
+    tokio::fs::create_dir(&new_root).await?;
+    tokio::fs::write(new_root.join("fresh.jsonl"), b"public source\n").await?;
+    let mut configured = fixture.config()?;
+    configured.roots_all_files = vec![new_root.clone()];
+    store.fault.store(usize::MAX, Ordering::SeqCst);
+    let services = fixture.services(store.clone(), Arc::new(SyntheticScanner))?;
+    let report = pipeline::run(
+        Arc::new(configured),
+        options(),
+        services,
+        CancellationToken::new(),
+    )
+    .await?;
+    assert_eq!(report.deleted, 1);
+    assert_eq!(report.retained, 1);
+    assert_eq!(report.reconciled_absent, 0);
+    assert_eq!(store.puts.load(Ordering::SeqCst), 2);
+    assert!(!tokio::fs::try_exists(new_root.join("fresh.jsonl")).await?);
+    assert!(tokio::fs::read(old_path).await?.eq(&old_source));
+    let database = fixture.work.join("state.sqlite");
+    let current = pool
+        .run(&CancellationToken::new(), move || read_rows(database))
+        .await?;
+    let retained = current
+        .iter()
+        .find(|row| row.key == key)
+        .ok_or(Error::Worker)?;
+    assert!(serde_json::to_vec(retained)?.eq(&record));
+    Ok(())
+}
+
+#[tokio::test]
 async fn no_intent_history_survives_absence_without_false_deletion_and_retries_on_demand()
 -> Result<(), Box<dyn std::error::Error>> {
     let fixture = Fixture::new(1)?;

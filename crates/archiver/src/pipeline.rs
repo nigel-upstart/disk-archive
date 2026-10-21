@@ -434,7 +434,10 @@ async fn reconcile_absent(context: &Context, roots: &[Arc<Root>]) -> Result<(), 
         }
         let path = std::path::PathBuf::from(std::ffi::OsString::from_vec(row.path.clone()));
         let Some(root) = roots.iter().find(|root| path.starts_with(&root.path)) else {
-            return Err(Error::Configuration);
+            // An unselected namespace never authorizes work on this durable intent.
+            // Retain its exact history without blocking unrelated configured roots.
+            context.counts.retain(1)?;
+            continue;
         };
         let relative = path
             .strip_prefix(&root.path)

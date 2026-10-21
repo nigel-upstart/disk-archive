@@ -70,8 +70,10 @@ remain unchanged and increment `namespace_conflicts` instead of rewriting Delete
 Discovery retains at most 100,000 deduplicated key/identity pairs and 64 MiB of key bytes.
 Caps fail closed, never silently truncate. These serialized-byte/cardinality limits are not RSS
 measurements, and the pending-work cap is not a lifetime archive limit.
-A matching resumed object requires fresh checksum-enabled HEAD and a fresh kernel token.
-Only genuine `NotFound` or definitive integrity mismatch permits another upload attempt;
+An outstanding intent outside the currently selected roots is counted as retained without
+changing its row, reading/unlinking that source, or blocking unrelated roots. Bucket/key namespace
+mismatches still fail the run. A matching resumed object requires fresh checksum-enabled HEAD
+and a fresh kernel token. Only genuine `NotFound` or definitive integrity mismatch permits another upload attempt;
 transport failures retain the intent. Source changes also retain intent and never reuse its
 capability. Keys encode the full root-qualified absolute path without its initial slash,
 preserving dots and distinguishing roots. Write-once keys deliberately retain a new generation
