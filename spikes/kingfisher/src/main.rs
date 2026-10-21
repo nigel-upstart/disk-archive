@@ -6,6 +6,7 @@ use kingfisher_scanner::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    assert!(kingfisher_vectorscan::version().starts_with("5.4.13"));
     let custom = RulesDatabase::from_rules(vec![Rule::new(RuleSyntax::new(
         "disk-archive.synthetic",
         "Synthetic fixture",
