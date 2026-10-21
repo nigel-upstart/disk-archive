@@ -59,6 +59,8 @@ def check_content(name: str, content: bytes, values: list[str]) -> None:
         raise ValueError(f"refusing tracked dotenv file: {name}")
     if len(content) > MAX_FILE_BYTES:
         raise ValueError(f"file exceeds 1 MiB limit: {name}")
+    # Intentionally cover every nonempty literal, including short/common values.
+    # False positives are preferable to silently exempting a local configuration value.
     if any(value.encode() in content for value in values):
         # Deliberately never print the value, key, or matching line.
         raise ValueError(f"local .env value found in staged/tracked content: {name}")

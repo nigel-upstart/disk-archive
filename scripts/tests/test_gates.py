@@ -25,6 +25,11 @@ class PolicyTests(unittest.TestCase):
             with self.subTest(content=content), self.assertRaises(ValueError):
                 policy.dotenv_values(content)
 
+    def test_short_values_are_intentionally_not_exempted(self):
+        for value in ("1", "true", "dev"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                policy.check_content("fixture.txt", value.encode(), policy.dotenv_values("KEY=" + value))
+
     def test_secret_value_is_not_in_diagnostic(self):
         with self.assertRaises(ValueError) as caught:
             policy.check_content("fixture.txt", b"unique-synthetic-sentinel", ["unique-synthetic-sentinel"])
@@ -116,6 +121,41 @@ class QuietTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             (Path(root) / ".task-logs").symlink_to(root)
             self.assertEqual(self.run_quiet(root, "--", "true").returncode, 2)
+
+
+class SbomTests(unittest.TestCase):
+    def test_stale_member_output_cannot_be_reused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "scripts").mkdir()
+            for name in ("policy.py", "sbom.sh"):
+                shutil.copy(ROOT / "scripts" / name, root / "scripts" / name)
+            (root / "Cargo.toml").write_text("[workspace]\n")
+            member = root / "crates/test/Cargo.toml"
+            member.parent.mkdir(parents=True)
+            member.write_text("")
+            source = member.parent / "disk-archive-bom.json"
+            source.write_text('{"stale":true}')
+            binary = root / "bin"
+            binary.mkdir()
+            metadata = {"workspace_members": ["test"], "packages": [{"id": "test", "name": "test", "manifest_path": str(member), "source": None}], "resolve": {"nodes": []}}
+            (binary / "cargo").write_text(
+                "#!/usr/bin/env python3\nimport json, os, pathlib, sys\n"
+                + "if sys.argv[1] == 'metadata': print(" + repr(json.dumps(metadata)) + ")\n"
+                + "elif os.environ.get('FAKE_GENERATE') == '1': pathlib.Path(" + repr(str(source)) + ").write_text('{\"fresh\":true}')\n"
+            )
+            (binary / "cyclonedx").write_text("#!/usr/bin/env bash\nexit 0\n")
+            for path in binary.iterdir():
+                path.chmod(0o700)
+            env = {**os.environ, "PATH": str(binary) + os.pathsep + os.environ["PATH"], "FAKE_GENERATE": "0"}
+            command = ["bash", "scripts/sbom.sh"]
+            result = subprocess.run(command, cwd=root, env=env, capture_output=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(source.exists())
+            self.assertFalse((root / "target/sbom/test.cdx.json").exists())
+            result = subprocess.run(command, cwd=root, env={**env, "FAKE_GENERATE": "1"}, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads((root / "target/sbom/test.cdx.json").read_text()), {"fresh": True})
 
 
 class SecretScanTests(unittest.TestCase):

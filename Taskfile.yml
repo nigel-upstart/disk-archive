@@ -20,7 +20,7 @@ tasks:
   test:
     cmds: ['{{.QUIET}} bash scripts/gates.sh test']
   verify:
-    cmds: ['{{.QUIET}} bash scripts/verify.sh']
+    cmds: ["bash scripts/quiet-run.sh --success-pattern 'scaffolding|not a proof result' -- bash scripts/verify.sh"]
   bench:
     desc: Compile benchmarks; performance gate follows in issue 7
     cmds: ['{{.QUIET}} cargo bench --workspace --no-run --locked']
@@ -31,7 +31,7 @@ tasks:
   supply-chain:
     cmds: ['{{.QUIET}} bash scripts/gates.sh supply-chain']
   parity:
-    cmds: ['{{.QUIET}} bash scripts/gates.sh parity']
+    cmds: ["bash scripts/quiet-run.sh --success-pattern 'not implemented' -- bash scripts/gates.sh parity"]
   hook:commit:
     cmds:
       - task: fmt
