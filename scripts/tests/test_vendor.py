@@ -21,7 +21,7 @@ class VendorPolicyTests(unittest.TestCase):
             with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 vendor = root / "vendor/transfer-manager"
-                shutil.copytree(ROOT / "vendor/transfer-manager", vendor)
+                shutil.copytree(ROOT / "vendor", root / "vendor")
                 if mutation == "source":
                     path = vendor / "aws-sdk-s3-transfer-manager/src/lib.rs"
                     path.write_bytes(path.read_bytes() + b"\n// synthetic tamper\n")
@@ -37,6 +37,29 @@ class VendorPolicyTests(unittest.TestCase):
                     (vendor / "extra.txt").write_text("synthetic")
                 with self.assertRaises(ValueError):
                     policy.check_vendor(root)
+
+    def test_dns_patch_is_exact_and_tamper_evident(self):
+        for name in ("src/hickory.rs", "src/lib.rs", "Cargo.toml", "UPSTREAM-hickory.rs", "compatibility.patch", "provenance.json"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                vendor = root / "vendor/aws-smithy-dns"
+                shutil.copytree(ROOT / "vendor/aws-smithy-dns", vendor)
+                path = vendor / name
+                path.write_bytes(path.read_bytes() + b"\n")
+                with self.assertRaises(ValueError):
+                    policy.check_dns_vendor(root)
+
+    def test_dns_path_patch_cannot_escape(self):
+        for source, name, spec in (
+            ("crates-io", "aws-smithy-dns", '{path="elsewhere"}'),
+            ("crates-io", "other", '{path="vendor/aws-smithy-dns"}'),
+            ("other", "aws-smithy-dns", '{path="vendor/aws-smithy-dns"}'),
+        ):
+            with self.subTest(source=source, name=name), tempfile.TemporaryDirectory() as directory:
+                manifest = Path(directory) / "Cargo.toml"
+                manifest.write_text(f'[patch."{source}"]\n{name}={spec}\n')
+                with self.assertRaisesRegex(ValueError, "unapproved path patch"):
+                    policy.check_manifest(manifest)
 
     def test_path_patch_is_not_general_admission(self):
         with tempfile.TemporaryDirectory() as directory:

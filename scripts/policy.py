@@ -19,6 +19,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 TM_SOURCE = "https://github.com/awslabs/aws-s3-transfer-manager-rs"
 TM_REVISION = "dc391970cd36e0d6d6ed044dcb3351b26131e9be"
 TM_RECEIPT_SHA256 = "6f80f3b928a2d909c8c2b012920c141961bece253f8449b99e65625d50d21a00"
+DNS_RECEIPT_SHA256 = "2d33d7d4d75a74834fc1fca952481fffffbe50f81dd955ec3f5ef9295322e219"
+DNS_PATCHES = {"aws-smithy-dns": "vendor/aws-smithy-dns"}
 TM_PATCHES = {
     "aws-sdk-s3-transfer-manager": "vendor/transfer-manager/aws-sdk-s3-transfer-manager",
     "s3-mock-server": "vendor/transfer-manager/s3-mock-server",
@@ -96,8 +98,9 @@ def check_manifest(path: pathlib.Path) -> None:
     for source, declaration in data.get("patch", {}).items():
         for name, spec in declaration.items():
             if isinstance(spec, dict) and "path" in spec:
-                if path.resolve() != ROOT / "Cargo.toml" or source != TM_SOURCE or spec != {"path": TM_PATCHES.get(name)}:
-                    raise ValueError("unapproved path patch; only the exact audited transfer-manager patch is allowed")
+                allowed = {TM_SOURCE: TM_PATCHES, "crates-io": DNS_PATCHES}.get(source, {})
+                if path.resolve() != ROOT / "Cargo.toml" or name not in allowed or spec != {"path": allowed[name]}:
+                    raise ValueError("unapproved path patch; only exact audited transfer-manager/DNS patches are allowed")
     if any(isinstance(spec, dict) and "path" in spec for spec in data.get("replace", {}).values()):
         raise ValueError("path replacements are not approved")
     if "package" in data and data.get("lints", {}).get("workspace") is not True:
@@ -126,8 +129,38 @@ def check_manifest(path: pathlib.Path) -> None:
                     raise ValueError(f"git dependency needs an upstream-tracking note in docs/dependencies.md: {name}")
 
 
+def check_dns_vendor(root: pathlib.Path) -> None:
+    """Pin the registry archive identity and every byte of the reviewed compatibility patch."""
+    vendor = root / "vendor/aws-smithy-dns"
+    receipt_bytes = (vendor / "provenance.json").read_bytes()
+    if hashlib.sha256(receipt_bytes).hexdigest() != DNS_RECEIPT_SHA256:
+        raise ValueError("DNS admission receipt changed; requires a reviewed pin/policy update")
+    receipt = json.loads(receipt_bytes)
+    files = receipt["source_files"]
+    originals = {"Cargo.toml": "UPSTREAM-Cargo.toml", "src/hickory.rs": "UPSTREAM-hickory.rs"}
+    expected_paths = set(files) | set(originals.values()) | {"provenance.json", "compatibility.patch"}
+    actual_paths = set()
+    for path in vendor.rglob("*"):
+        if path.is_symlink() or not (path.is_dir() or path.is_file()):
+            raise ValueError("DNS vendor tree must contain only regular files/directories")
+        if path.is_file():
+            actual_paths.add(path.relative_to(vendor).as_posix())
+    if actual_paths != expected_paths:
+        raise ValueError("unexpected/missing DNS vendor file")
+    for name, digest in files.items():
+        original = vendor / originals.get(name, name)
+        if hashlib.sha256(original.read_bytes()).hexdigest() != digest:
+            raise ValueError(f"DNS upstream source changed: {name}")
+        expected = receipt["patched_files"].get(name, digest)
+        if hashlib.sha256((vendor / name).read_bytes()).hexdigest() != expected:
+            raise ValueError(f"unapproved DNS compatibility patch: {name}")
+    if hashlib.sha256((vendor / "compatibility.patch").read_bytes()).hexdigest() != receipt["patch_sha256"]:
+        raise ValueError("DNS compatibility patch receipt mismatch")
+
+
 def check_vendor(root: pathlib.Path = ROOT) -> None:
     """Verify exact upstream bytes and the only admitted manifest transformations."""
+    check_dns_vendor(root)
     vendor = root / "vendor/transfer-manager"
     receipt_bytes = (vendor / "provenance.json").read_bytes()
     if hashlib.sha256(receipt_bytes).hexdigest() != TM_RECEIPT_SHA256:

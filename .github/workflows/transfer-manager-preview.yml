@@ -43,7 +43,7 @@ jobs:
           for crate in ('storage', 'verified'):
               shutil.copytree(Path('crates') / crate, root / 'crates' / crate)
           manifest = Path('Cargo.toml').read_text()
-          manifest = re.sub(r'\[patch\."https://github.com/awslabs/aws-s3-transfer-manager-rs"\]\n(?:[^\[]*?)(?=\[profile\.)', '', manifest)
+          manifest = re.sub(r'^\[patch\.(?:"https://github.com/awslabs/aws-s3-transfer-manager-rs"|crates-io)\]\n.*?(?=^\[|\Z)', '', manifest, flags=re.MULTILINE | re.DOTALL)
           (root / 'Cargo.toml').write_text(manifest)
           shutil.copyfile('rust-toolchain.toml', root / 'rust-toolchain.toml')
           path = root / 'crates/storage/Cargo.toml'

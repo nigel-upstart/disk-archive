@@ -14,7 +14,16 @@ The budgeted spool is intentional: S3 metadata must contain the complete gzip SH
 upload initiation, and restart verification needs durable checksum expectations. CPU permits
 are acquired before blocking work and stay inside the worker even if its caller disappears.
 Prepared spools retain their disk reservations through background upload/abort cleanup. Disk
-reservation is a configured quota, not a claim about free filesystem space.
+reservation is a configured quota, not a claim about free filesystem space. Oversized conservative
+reservations fail before CPU admission; compressors never acquire more disk quota mid-stream.
+A two-file regression uses CPU capacity one and a single-spool quota to prove a waiting preparation
+cannot starve the first upload's real final-hash/kernel authorization step.
+
+Under the exclusive Rust work-directory lock, `account_existing_spools` charges preexisting
+`archive-*.gz` files against the same quota once across all preparer clones. Preparation invokes
+this lazily if startup did not. Per-file sizes round up to quota units; symlinks, non-regular entries
+and over-budget leftovers fail closed. No leftover is deleted automatically. Reconcile crash
+artifacts explicitly before reclaiming their quota; restart the preparer after that reconciliation.
 
 One shared SDK client supplies adaptive retries (eight attempts), explicit connect/attempt/overall
 timeouts and stalled-stream protection. Profiles, shared files, environment, SSO and role providers

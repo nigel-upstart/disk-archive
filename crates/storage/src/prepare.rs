@@ -10,7 +10,7 @@ use disk_archive_verified::age::Timestamp;
 use flate2::{Compression, GzBuilder};
 use sha2::{Digest as _, Sha256};
 use tempfile::NamedTempFile;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{OnceCell, OwnedSemaphorePermit, Semaphore};
 use zeroize::Zeroizing;
 
 use crate::blocking::BlockingPool;
@@ -80,6 +80,7 @@ impl PrepareOptions {
 pub struct UploadPreparer {
     options: PrepareOptions,
     disk: Arc<Semaphore>,
+    existing: Arc<OnceCell<OwnedSemaphorePermit>>,
     cpu: BlockingPool,
 }
 
@@ -95,8 +96,35 @@ impl UploadPreparer {
         Ok(Self {
             options,
             disk: Arc::new(Semaphore::new(permits)),
+            existing: Arc::new(OnceCell::new()),
             cpu,
         })
+    }
+
+    /// Charge crash-leftover derived spools once across clones, before new preparation.
+    /// Call only while owning G's exclusive Rust work-directory lock. Never deletes any entry.
+    /// Preparation also calls this lazily; directory entries must not change externally afterward.
+    ///
+    /// # Errors
+    /// Unsafe entries, I/O failures, cancellation or preexisting bytes exceeding quota fail closed.
+    pub async fn account_existing_spools(
+        &self,
+        cancel: CancellationToken,
+    ) -> Result<(), StoreError> {
+        self.existing
+            .get_or_try_init(|| async {
+                let options = self.options.clone();
+                let units = self
+                    .cpu
+                    .run(cancel, move |child| existing_spool_units(&options, &child))
+                    .await?;
+                self.disk
+                    .clone()
+                    .try_acquire_many_owned(units)
+                    .map_err(|_| StoreError::Budget)
+            })
+            .await?;
+        Ok(())
     }
 
     /// Prepare the exact already-open regular source. G must exclude writers and provide identity
@@ -121,12 +149,17 @@ impl UploadPreparer {
             .size
             .checked_add(identity.size / 16)
             .and_then(|n| n.checked_add(1024))
-            .ok_or(StoreError::Budget)?
-            .min(self.options.max_spool_bytes);
+            .ok_or(StoreError::Budget)?;
+        // Never start a partial spool that must wait for more disk while owning CPU.
+        // Admission is conservative even for highly compressible oversized sources.
+        if cap > self.options.max_spool_bytes {
+            return Err(StoreError::Budget);
+        }
         let units = cap.div_ceil(DISK_UNIT);
         if units > self.options.disk_budget / DISK_UNIT {
             return Err(StoreError::Budget);
         }
+        self.account_existing_spools(cancel.clone()).await?;
         let permit = tokio::select! {
             biased;
             () = cancel.cancelled() => return Err(StoreError::Cancelled),
@@ -172,6 +205,39 @@ impl PreparedUpload {
     pub(crate) fn path(&self) -> &Path {
         self.spool.file.path()
     }
+}
+
+fn existing_spool_units(
+    options: &PrepareOptions,
+    cancel: &CancellationToken,
+) -> Result<u32, StoreError> {
+    let directory = std::fs::symlink_metadata(&options.work_dir).map_err(|_| StoreError::Io)?;
+    if !directory.is_dir() || directory.permissions().mode() & 0o077 != 0 {
+        return Err(StoreError::Configuration);
+    }
+    let mut units = 0_u64;
+    for entry in std::fs::read_dir(&options.work_dir).map_err(|_| StoreError::Io)? {
+        if cancel.is_cancelled() {
+            return Err(StoreError::Cancelled);
+        }
+        let entry = entry.map_err(|_| StoreError::Io)?;
+        let name = entry.file_name();
+        let name = name.as_encoded_bytes();
+        if !name.starts_with(b"archive-") || !name.ends_with(b".gz") {
+            continue;
+        }
+        let metadata = std::fs::symlink_metadata(entry.path()).map_err(|_| StoreError::Io)?;
+        if !metadata.is_file() {
+            return Err(StoreError::Configuration);
+        }
+        units = units
+            .checked_add(metadata.len().div_ceil(DISK_UNIT))
+            .ok_or(StoreError::Budget)?;
+        if units > options.disk_budget / DISK_UNIT {
+            return Err(StoreError::Budget);
+        }
+    }
+    u32::try_from(units).map_err(|_| StoreError::Budget)
 }
 
 fn prepare_blocking(

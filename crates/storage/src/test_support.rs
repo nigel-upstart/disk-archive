@@ -295,7 +295,11 @@ fn mutate_head(headers: &mut hyper::HeaderMap, fault: u8) {
 #[cfg(test)]
 mod budget_tests;
 #[cfg(test)]
+mod orphan_tests;
+#[cfg(test)]
 mod prepare_tests;
+#[cfg(test)]
+mod resource_order_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

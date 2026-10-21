@@ -1,0 +1,81 @@
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -66,5 +66,5 @@
+ version = "0.8.2"
+ 
+ [target.'cfg(not(target_family = "wasm"))'.dependencies.hickory-resolver]
+-version = "0.25.2"
++version = "0.26.3"
+ optional = true
+--- a/src/hickory.rs
++++ b/src/hickory.rs
+@@ -7,8 +7,8 @@
+ 
+ use aws_smithy_runtime_api::client::dns::{DnsFuture, ResolveDns, ResolveDnsError};
+ use hickory_resolver::{
+-    config::{NameServerConfigGroup, ResolverConfig},
+-    name_server::TokioConnectionProvider,
++    config::{NameServerConfig, ResolverConfig},
++    net::runtime::TokioRuntimeProvider,
+     Resolver,
+ };
+ 
+@@ -18,7 +18,7 @@
+ #[non_exhaustive]
+ #[derive(Debug, Clone)]
+ pub struct HickoryDnsResolver {
+-    resolver: Resolver<TokioConnectionProvider>,
++    resolver: Resolver<TokioRuntimeProvider>,
+ }
+ 
+ impl Default for HickoryDnsResolver {
+@@ -26,7 +26,10 @@
+     /// This uses `/etc/resolv.conf` on Unix OSes and registry settings on Windows.
+     fn default() -> Self {
+         Self {
+-            resolver: Resolver::builder_tokio().expect("In tokio runtime").build(),
++            resolver: Resolver::builder_tokio()
++                .expect("In tokio runtime")
++                .build()
++                .expect("Valid system resolver configuration"),
+         }
+     }
+ }
+@@ -118,11 +121,16 @@
+     /// Build a [HickoryDnsResolver]
+     pub fn build(self) -> HickoryDnsResolver {
+         let mut builder = if let Some(nameservers) = self.nameservers {
+-            let nameserver_config =
+-                NameServerConfigGroup::from_ips_clear(&nameservers.ips, nameservers.port, true);
++            let nameserver_config = nameservers.ips.iter().map(|ip| {
++                let mut server = NameServerConfig::udp_and_tcp(*ip);
++                for connection in &mut server.connections {
++                    connection.port = nameservers.port;
++                }
++                server
++            }).collect::<Vec<_>>();
+             let resolver_config = ResolverConfig::from_parts(None, vec![], nameserver_config);
+ 
+-            Resolver::builder_with_config(resolver_config, TokioConnectionProvider::default())
++            Resolver::builder_with_config(resolver_config, TokioRuntimeProvider::default())
+         } else {
+             Resolver::builder_tokio().expect("Successfully read system config")
+         };
+@@ -138,7 +146,7 @@
+         }
+ 
+         if let Some(cache_size) = self.cache_size {
+-            opts.cache_size = cache_size;
++            opts.cache_size = cache_size.try_into().unwrap_or(u64::MAX);
+         }
+ 
+         if let Some(num_concurrent_reqs) = self.num_concurrent_reqs {
+@@ -146,7 +154,7 @@
+         }
+ 
+         HickoryDnsResolver {
+-            resolver: builder.build(),
++            resolver: builder.build().expect("Valid resolver configuration"),
+         }
+     }
+ }

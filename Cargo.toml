@@ -15,6 +15,9 @@ repository = "https://github.com/nigel-upstart/disk-archive"
 aws-sdk-s3-transfer-manager = { path = "vendor/transfer-manager/aws-sdk-s3-transfer-manager" }
 s3-mock-server = { path = "vendor/transfer-manager/s3-mock-server" }
 
+[patch.crates-io]
+aws-smithy-dns = { path = "vendor/aws-smithy-dns" }
+
 # The generated S3 service is exceptionally large; omit dependency debug symbols
 # while retaining workspace-package debug/coverage information.
 [profile.dev.package.aws-sdk-s3]

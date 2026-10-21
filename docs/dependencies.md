@@ -31,13 +31,19 @@ regressions and full checks. Do not replace immutable revisions with moving main
 upstream compatibility workflow must remain separate from production admission; its output is
 not permission to update the admitted source automatically.
 
-The pinned preview graph currently pulls `hickory-proto 0.25.2` through aws-smithy-dns.
-RUSTSEC-2026-0118 and RUSTSEC-2026-0119 remain **blocking**, with no vulnerability waiver.
-The adapter supplies its shared SDK client, disabling the preview's custom runtime HTTP/DNS
-transport, and DNSSEC features are not selected; that reachability observation is not a passing
-cargo-deny result. A reviewed upstream/pin change or explicit security-policy decision is needed
-before merge. Exact duplicate-API and foldhash-Zlib allowances in deny.toml are scoped separately
-to issue 5 and expire 2026-11-21; they do not exempt these vulnerabilities.
+The preview graph's `aws-smithy-dns 0.2.3` otherwise selects vulnerable Hickory 0.25.
+The approved minimal registry-source patch upgrades to Hickory 0.26.3 (the patched 0.26 line,
+including the approved 0.26.1 security fix) and adapts only runtime-provider, nameserver,
+cache-size and fallible-builder APIs. No advisory is ignored. The published archive identity
+is SHA-256 `3aec766384ece7e3e9ac462683a81a0c3803a1169900e071355d33c194d71fab`;
+`vendor/aws-smithy-dns/provenance.json` records original and patched hashes, and
+`compatibility.patch` records every change. Original manifests/source and Apache-2.0 license
+are retained. Policy pins the receipt and exact path override; it rejects source, patch,
+receipt, extra-file and symlink changes. Upgrade tracking belongs to issue 5: check monthly
+for an upstream Smithy release supporting patched Hickory and remove this patch when available.
+Exact duplicate-API and foldhash-Zlib allowances in deny.toml expire 2026-11-21; these are
+not vulnerability waivers. The macOS-only core-foundation duplicate is required by Hickory's
+system-configuration DNS integration versus rustls-native-certs' security-framework ABI.
 
 ## Separate compiler and verifier pins
 
