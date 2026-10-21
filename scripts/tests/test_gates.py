@@ -17,6 +17,12 @@ policy = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(policy)
 
 
+def isolated_git_environment():
+    """Scratch Git must never inherit the hook caller's repository selectors."""
+    names = subprocess.check_output(["git", "rev-parse", "--local-env-vars"], text=True).splitlines()
+    return {key: value for key, value in os.environ.items() if key not in names}
+
+
 class PolicyTests(unittest.TestCase):
     def test_dotenv_literals_and_comments(self):
         self.assertEqual(policy.dotenv_values("# comment\nexport KEY='synthetic value' # note\nOTHER=literal # note\nEMPTY="), ["synthetic value", "literal"])
@@ -76,16 +82,17 @@ class PolicyTests(unittest.TestCase):
     def test_staged_guard_checks_index_not_worktree(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            subprocess.run(["git", "init", "--quiet", temporary], check=True)
+            git_env = isolated_git_environment()
+            subprocess.run(["git", "init", "--quiet", temporary], check=True, env=git_env)
             (root / ".env").write_text("KEY=unique-synthetic-sentinel")
             (root / "fixture").write_text("unique-synthetic-sentinel")
-            subprocess.run(["git", "-C", temporary, "add", "fixture"], check=True)
+            subprocess.run(["git", "-C", temporary, "add", "fixture"], check=True, env=git_env)
             (root / "fixture").write_text("now harmless")
-            result = subprocess.run(["python3", str(ROOT / "scripts/policy.py"), "staged"], cwd=root, capture_output=True, text=True)
+            result = subprocess.run(["python3", str(ROOT / "scripts/policy.py"), "staged"], cwd=root, capture_output=True, text=True, env=git_env)
             self.assertNotEqual(result.returncode, 0)
             self.assertNotIn("unique-synthetic-sentinel", result.stderr)
-            subprocess.run(["git", "-C", temporary, "add", "fixture"], check=True)
-            subprocess.run(["python3", str(ROOT / "scripts/policy.py"), "staged"], cwd=root, check=True)
+            subprocess.run(["git", "-C", temporary, "add", "fixture"], check=True, env=git_env)
+            subprocess.run(["python3", str(ROOT / "scripts/policy.py"), "staged"], cwd=root, check=True, env=git_env)
 
     def test_metadata_forbids_credentials_process(self):
         metadata = {"packages": [{"id": "aws", "name": "aws-config", "source": None}], "resolve": {"nodes": [{"id": "aws", "features": ["credentials-process"]}]}}
