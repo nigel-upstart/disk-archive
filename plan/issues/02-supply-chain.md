@@ -1,4 +1,4 @@
-<!-- Mirror of https://github.com/nigel-upstart/disk-archive/issues/2 as opened. The issue is the source of truth; git rm this file when #2 closes or if it drifts. -->
+<!-- Mirror of https://github.com/nigel-upstart/disk-archive/issues/2 (synchronized during PR #9). The issue is the source of truth; git rm this file when #2 closes or if it drifts. -->
 
 # #2: Supply-chain and toolchain policy for the async/AWS/scanner dependency tree (incl. CycloneDX SBOM)
 
@@ -14,7 +14,7 @@ Part of #1. **Land this before or together with** the first PR that adds tokio, 
 - Enforce this in CI with separate jobs, and add an ast-grep or `cargo metadata` check that `crates/verified` has no dependencies.
 
 ### cargo-deny
-- **`[sources]`:** allow git sources only for these two, each pinned to an explicit `rev` or tag:
+- **`[sources]`:** allow git sources only for these two, each pinned exclusively to a full immutable commit `rev` (never a branch or tag). CI rejects missing revisions and all branch/tag selectors, including on these approved sources:
   - `https://github.com/awslabs/aws-s3-transfer-manager-rs` (developer preview, not on crates.io)
   - `https://github.com/mongodb/kingfisher`, only if #6 picks it
 - **`[licenses]`:** allowlist built from `cargo deny list` once the dependencies are in. Expect Apache-2.0, MIT, ISC, BSD-3-Clause and Unicode-3.0, plus the composite expression on `aws-lc-sys`. Anything new fails CI until it is reviewed.

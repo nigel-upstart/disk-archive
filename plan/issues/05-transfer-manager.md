@@ -23,8 +23,8 @@ Large archives need multipart uploads. AWS documents a 5 GB single-PUT limit; ch
 - If the transfer manager needs a known length or a seekable body for some path, fall back to a temp file in the work directory, limited by a configured temp-disk budget.
 
 ### Integrity before delete
-- Request S3 additional checksums: full-object `CRC64NVME` if supported end-to-end, otherwise `SHA256`.
-- Also keep the legacy-compatible user metadata: `sha256` of the gzip bytes and `orig-size`.
+- Request S3 additional checksums: full-object `CRC64NVME` if supported end-to-end. For a multipart `SHA256` fallback, compute S3's composite checksum from the ordered part digests (including the encoded part count), not the streaming whole-object SHA-256. Single-PUT SHA-256 is a full-object checksum. Verify both checksum type and value; unsupported or missing evidence fails closed. See [AWS checksum semantics](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity-upload.html).
+- Also keep the legacy-compatible user metadata: `sha256` of the complete gzip bytes and `orig-size`. This full-object SHA-256 is distinct from a multipart composite checksum. Precompute metadata before initiating upload (a budgeted spool or deterministic second pass is acceptable). Retain part geometry/digests in the durable expected evidence when composite verification is used.
 - After the upload completes, call `HeadObject` with `ChecksumMode::Enabled`. Produce a `VerifiedUpload` only if all three hold:
   - `ContentLength` matches
   - the checksum matches
@@ -43,7 +43,7 @@ Large archives need multipart uploads. AWS documents a 5 GB single-PUT limit; ch
 ## Acceptance criteria
 
 - [ ] Tests against the mock cover an empty file, a small file below the threshold, and a large file above the threshold with several parts.
-- [ ] A test where the mock returns a checksum mismatch produces no `VerifiedUpload` and no delete.
+- [ ] Tests cover multipart composite SHA-256 fallback (including part count/type), distinct from the whole-gzip metadata digest. Missing/wrong-type/mismatched checksum evidence produces no `VerifiedUpload` and no delete.
 - [ ] A cancel-mid-upload test leaves no orphaned parts on the mock (multipart aborted).
 - [ ] Peak memory stays within the in-flight budget on the benchmark corpus; the perf gate tracks it.
 - [ ] Mock gaps (e.g. checksum algorithms the mock doesn't support) are listed, and those cases are covered by the documented real-S3 smoke run.

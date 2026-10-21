@@ -24,7 +24,7 @@ Move the staged pipeline (discover → scan → redact → verify → upload →
 ### State (SQLite)
 - `rusqlite` is synchronous. A **single writer task** owns the connection and receives updates over a channel.
 - It writes in batches, one transaction per N updates or T milliseconds, with WAL mode on. This replaces the per-update mutex.
-- Resume reads happen once at startup.
+- Resume reads happen once at startup. Persist expected upload evidence (source identity, key, compressed length, checksum type/value and metadata) durably before starting upload; regenerate identical gzip bytes or retain the budgeted spool if needed. Before re-uploading on resume, HEAD the expected key and verify that evidence using #5's checksum semantics. A matching object is reconciled to durable `uploaded` state and freshly verified before delete authorization; only an absent or definitively mismatched object is uploaded. Transient HEAD failures are errors, not evidence of absence. Property tests cover cancellation after remote commit but before the local uploaded-state commit.
 
 ### Cancellation and shutdown
 - Use a `tokio_util::sync::CancellationToken`, cancelled on SIGINT or SIGTERM. On cancel:

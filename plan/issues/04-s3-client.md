@@ -1,4 +1,4 @@
-<!-- Mirror of https://github.com/nigel-upstart/disk-archive/issues/4 as opened. The issue is the source of truth; git rm this file when #4 closes or if it drifts. -->
+<!-- Mirror of https://github.com/nigel-upstart/disk-archive/issues/4 (synchronized during PR #9). The issue is the source of truth; git rm this file when #4 closes or if it drifts. -->
 
 # #4: S3 client via aws-sdk-s3 + aws-config (profiles, SSO, retries, corporate CA)
 
@@ -9,7 +9,7 @@ Part of #1. **Blocked by** #2 and #3.
 Replace boto3, and the previously planned AWS CLI v2 subprocess backend, with the AWS SDK for Rust behind a storage trait that tests can fake.
 
 ### Crates
-- `aws-config`: default features already include `sso`, `credentials-process` and `rt-tokio`. Version 1.13.x when this was written.
+- `aws-config` with `default-features = false`; enable `default-https-client`, `rt-tokio`, and `sso`, but never `credentials-process`. Check the resolved feature graph to prevent transitive re-enablement. Profiles requiring `credential_process` are unsupported; normal environment, shared-file, SSO, and role providers remain available. Version 1.13.x when this was written.
 - `aws-sdk-s3` with `behavior-version-latest` (1.153.x when this was written).
 - Build **one** shared `aws_sdk_s3::Client` and clone it as needed (clones are cheap). This replaces the legacy per-thread clients.
 
@@ -43,6 +43,6 @@ Replace boto3, and the previously planned AWS CLI v2 subprocess backend, with th
 
 - [ ] Integration tests against the mock cover put, head (size, metadata and checksum), manifest upload, retryable 5xx errors and throttling.
 - [ ] A test shows a corrupted or mismatched head response produces no `VerifiedUpload` and no delete.
-- [ ] Profile and region config is covered by tests (env only, `.env` only, flag override).
+- [ ] Profile and region config is covered by tests (env only, `.env` only, flag override). A profile containing `credential_process` cannot spawn a command, and the resolved build excludes that feature.
 - [ ] Manual smoke against a real bucket under a dedicated test prefix is documented (not run in CI, needs credentials).
 - [ ] The corporate-proxy TLS behavior is verified and documented.
