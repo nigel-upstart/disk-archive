@@ -209,6 +209,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn different_prefixes_do_not_guarantee_namespace_isolation() -> Result<(), KeyError> {
+        let short = KeyPrefix::new(b"archive")?;
+        let nested = KeyPrefix::new(b"archive/v1/other")?;
+        assert_eq!(
+            encode_key(&short, b"other/v1/file")?,
+            encode_key(&nested, b"file")?
+        );
+        Ok(())
+    }
+
+    #[test]
     fn roundtrip_and_legacy_collision() -> Result<(), KeyError> {
         let prefix = KeyPrefix::new(b"archive")?;
         assert_ne!(encode_key(&prefix, b".x/f")?, encode_key(&prefix, b"x/f")?);

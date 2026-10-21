@@ -185,10 +185,16 @@ and fail if installation or proof execution is missing. No workspace build subst
 | Actual source | Proved contract | Outside the theorem |
 | --- | --- | --- |
 | `age.rs` | Strict cutoff equals mathematical nanosecond comparison over the full i64/u64 input domains; invalid nanoseconds fail closed; no arithmetic overflow. | Clock/stat accuracy, checked days-to-seconds conversion in core. |
-| `key.rs`, `key_model.rs` | Every successful production `encode_key` equals the versioned byte-sequence model and is <=1024 bytes. The model has a left inverse, hence encoding is injective for a fixed prefix. Loop indexing and arithmetic are in range. | Prefix/path-validation completeness and the runtime `decode_rel` inverse are tested, not proved; distinct configured prefixes are distinct namespaces, not a global injectivity theorem. |
+| `key.rs`, `key_model.rs` | Every successful production `encode_key` equals the versioned byte-sequence model and is <=1024 bytes. The model has a left inverse, hence encoding is injective for a fixed prefix. Loop indexing and arithmetic are in range. | Prefix/path-validation completeness and the runtime `decode_rel` inverse are tested, not proved; different configured prefixes can collide; no cross-prefix namespace isolation is proved. |
 | `bytes.rs`, `needles.rs` | Literal occurrence matches a quantified byte-subsequence predicate; final `guard_line` output contains none of the set's nonempty literals, including marker collisions. | Finding construction, JSON escaping, longest-first replacement and `replace_all_bounded` allocation limits are tested, not proved. Scanner completeness, secret erasure, cross-line concatenation, and whole-output cleanliness are not theorems. |
 | `pem.rs` | Returned marker spans have the uppercase/space delimiter grammar and valid bounds. Enter activates state; active resume emits empty bytes while active, or a suffix following a valid END when leaving. | Completeness/first-match selection, default-state derivation, inline PEM replacement and environment-assignment detection are tested, not proved. |
 | `lifecycle.rs` | Exact legal state graph; successful upload authority requires matching key/length/hashes/original metadata/AES256 and valid timestamps. Successful deletion authorization binds the consumed token and current identity to equal device/inode/size/mtime/ctime/hash. | Hash collision resistance, authentic SDK/HEAD evidence, configured bucket/version binding, no-follow source opens, exclusive namespace ownership, actual unlink and crash recovery. |
+
+Prefix allocation is an adapter obligation: `archive` + `other/v1/file` and
+`archive/v1/other` + `file` both produce `archive/v1/other/v1/file.gz`. Distinct valid
+prefixes do not establish disjoint object namespaces. Adapters must enforce non-overlapping
+key ownership across configurations/writers or use separate buckets; fixed-prefix injectivity
+alone does not prevent overwrites from another configuration.
 
 `key_model.rs` is ghost-only: its inverse/injectivity lemmas are linked to the successful runtime
 encoder's postcondition. It is not a duplicate executable encoder. The other erased blocks contain
