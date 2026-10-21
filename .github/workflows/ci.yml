@@ -16,14 +16,17 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: '4'
+      VECTORSCAN_OFFLINE: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
       - name: Install native scanner prerequisites
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake libboost-dev ragel pkg-config
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake libboost-dev ragel pkg-config strace
       - name: Install pinned workspace Rust
         run: |
           pin=$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')
@@ -35,11 +38,33 @@ jobs:
         run: bash scripts/verus-install.sh
       - run: task check
       - run: task ci:secrets
+      - name: Audit planted native scanner with network denied
+        run: bash scripts/scanner-offline.sh
+      - name: Pinned no-verification comparison (names and counts only)
+        run: bash scripts/scanner-parity.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cyclonedx-sbom
           path: target/sbom/*.cdx.json
           if-no-files-found: error
+  scanner-fuzz:
+    name: Full-catalog scanner/core fuzz
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: '4'
+      VECTORSCAN_OFFLINE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Native prerequisites and separately pinned fuzz compiler
+        run: |
+          sudo apt-get update && sudo apt-get install -y build-essential cmake libboost-dev ragel pkg-config
+          rustup toolchain install nightly-2026-10-20 --profile minimal
+          cargo install cargo-fuzz --version 0.13.2 --locked
+      - name: Fuzz actual scanner and core without exposing fuzzer output
+        run: python3 scripts/scanner-fuzz.py
   verus:
     name: Isolated Verus integration
     runs-on: ubuntu-24.04

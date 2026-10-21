@@ -1,5 +1,6 @@
 """Synthetic-only tests for the tooling gates; never inspect runtime data."""
 
+import datetime
 import importlib.util
 import json
 import os
@@ -93,6 +94,27 @@ class PolicyTests(unittest.TestCase):
             self.assertNotIn("unique-synthetic-sentinel", result.stderr)
             subprocess.run(["git", "-C", temporary, "add", "fixture"], check=True, env=git_env)
             subprocess.run(["python3", str(ROOT / "scripts/policy.py"), "staged"], cwd=root, check=True, env=git_env)
+
+    def test_dependency_exceptions_expire_and_require_attribution(self):
+        text = (ROOT / "deny.toml").read_text()
+        policy.check_exceptions(text, datetime.date(2026, 10, 21))
+        with self.assertRaisesRegex(ValueError, "expired"):
+            policy.check_exceptions(text, datetime.date(2026, 11, 21))
+        for malformed in (
+            '[advisories]\nignore=["RUSTSEC-0000-0000"]',
+            '[bans]\nskip=[{crate="broad",reason="Owner: maintainer; #17; expires 2026-11-21"}]',
+            '[advisories]\nignore=[{id="RUSTSEC-0000-0000",reason="expires 2026-11-21"}]',
+        ):
+            with self.assertRaises(ValueError):
+                policy.check_exceptions(malformed, datetime.date(2026, 10, 21))
+
+    def test_scanner_validation_aliases_and_opt_ins_fail_closed(self):
+        policy.check_scanner_features("kingfisher-scanner", [])
+        policy.check_scanner_features("kingfisher-scanner", ["default"])
+        for feature in ("validation", "validation-aws", "validation-http", "git", "archives", "context", "future-network-feature"):
+            with self.subTest(feature=feature), self.assertRaises(ValueError):
+                policy.check_scanner_features("kingfisher-scanner", [feature])
+        policy.check_scanner_features("unrelated", ["validation"])
 
     def test_metadata_forbids_credentials_process(self):
         metadata = {"packages": [{"id": "aws", "name": "aws-config", "source": None}], "resolve": {"nodes": [{"id": "aws", "features": ["credentials-process"]}]}}

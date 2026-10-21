@@ -9,7 +9,7 @@ mod guard;
 
 use std::{io::Read, ops::Range};
 
-use guard::{GuardState, PrefixGuard};
+use guard::SpanGuard;
 use kingfisher_rules::{RulesDatabase, get_builtin_rules};
 use kingfisher_vectorscan::{BlockScanner, Scan};
 use zeroize::{Zeroize, Zeroizing};
@@ -148,11 +148,12 @@ pub struct ScanSummary {
     pub findings: u64,
 }
 
-/// Reusable immutable rules. No inputs or findings are stored here.
+/// Reusable immutable, Send + Sync rules. Share one catalog across bounded workers.
+/// Per-call native scratch/guard cache is private; no inputs/findings are stored here.
 pub struct Scanner {
     database: RulesDatabase,
     limits: Limits,
-    guard: Option<PrefixGuard>,
+    guard: Option<SpanGuard>,
     labels: Vec<String>,
 }
 
@@ -171,8 +172,9 @@ impl Scanner {
     /// Wrap a compiled database. No rule is silently omitted.
     ///
     /// Finite rules must fit the match window. Unbounded line-local rules are
-    /// bounded by the physical-line budget; all others have a stateful DFA
-    /// prefix guard that blocks before an unfinished match can escape overlap.
+    /// bounded by the physical-line budget; all others use a bounded exact
+    /// library-backed prefix guard. It retains offsets and automaton states,
+    /// never raw match values. Native Kingfisher still detects all findings.
     ///
     /// # Errors
     /// Rejects empty-match rules, oversized finite rules, invalid budgets and
@@ -193,7 +195,12 @@ impl Scanner {
             {
                 return Err(ScanError::UnsupportedRules);
             }
-            let label = rule.id().replace('/', "-");
+            let normalized = rule.id().replace('/', "-");
+            let label = if normalized.len() <= 64 {
+                normalized
+            } else {
+                format!("kf.{}", rule.finding_sha1_fingerprint())
+            };
             if labels.contains(&label) {
                 return Err(ScanError::UnsupportedRules);
             }
@@ -218,13 +225,25 @@ impl Scanner {
                 unbounded.push(regex.as_str().to_owned());
             }
         }
-        let guard = PrefixGuard::new(&unbounded)?;
+        let guard = SpanGuard::new(&unbounded)?;
         Ok(Self {
             database,
             limits,
             guard,
             labels,
         })
+    }
+
+    /// Number of admitted catalog rules; no rule is silently dropped.
+    #[must_use]
+    pub fn rule_count(&self) -> usize {
+        self.database.num_rules()
+    }
+
+    /// Fixed input allocation size, independent of reader length.
+    #[must_use]
+    pub fn input_buffer_bytes(&self) -> usize {
+        self.limits.match_bytes + self.limits.chunk_bytes + 3
     }
 
     /// Scan incrementally. Callbacks finish before more bytes are read.
@@ -243,6 +262,10 @@ impl Scanner {
     {
         let mut native =
             BlockScanner::new(self.database.vectorscan_db()).map_err(|_| ScanError::Engine)?;
+        let mut guard_stream = self
+            .guard
+            .as_ref()
+            .map(|guard| guard.stream(self.limits.match_bytes));
         let mut window = Window::new(self.limits);
         let mut state = StreamState::new(self.database.num_rules());
         loop {
@@ -266,10 +289,15 @@ impl Scanner {
                 .bytes
                 .get(old_len..window.used)
                 .ok_or(ScanError::Budget)?;
-            state.advance(new_bytes, self.limits, self.guard.as_ref())?;
+            state.advance(new_bytes, self.limits)?;
             let eof = read == 0;
-            // Lookahead of M+2 covers the guard's delayed DFA acceptance and
-            // resolves greediness and end/word assertions. Keep
+            if let Some(stream) = guard_stream.as_mut() {
+                stream.advance(new_bytes)?;
+            }
+            if eof && let Some(stream) = guard_stream.take() {
+                stream.finish()?;
+            }
+            // Lookahead of M+2 resolves greediness and end/word assertions. Keep
             // one preceding byte when sliding, so ^/\A cannot be fabricated.
             let frontier = if eof {
                 window.base + window.used as u64
@@ -389,7 +417,6 @@ impl Scanner {
 }
 
 struct StreamState {
-    guard: GuardState,
     line_length: usize,
     ends: Vec<u64>,
     frontier: u64,
@@ -399,7 +426,6 @@ struct StreamState {
 impl StreamState {
     fn new(rules: usize) -> Self {
         Self {
-            guard: GuardState::default(),
             line_length: 0,
             ends: vec![0; rules],
             frontier: 0,
@@ -407,12 +433,7 @@ impl StreamState {
         }
     }
 
-    fn advance(
-        &mut self,
-        bytes: &[u8],
-        limits: Limits,
-        guard: Option<&PrefixGuard>,
-    ) -> Result<(), ScanError> {
+    fn advance(&mut self, bytes: &[u8], limits: Limits) -> Result<(), ScanError> {
         for &byte in bytes {
             self.line_length = if byte == b'\n' {
                 0
@@ -422,9 +443,6 @@ impl StreamState {
             if self.line_length > limits.line_bytes {
                 return Err(ScanError::LineTooLarge);
             }
-        }
-        if let Some(guard) = guard {
-            guard.advance(&mut self.guard, bytes, limits.match_bytes)?;
         }
         self.summary.bytes = self
             .summary
@@ -478,6 +496,12 @@ impl Window {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn immutable_scanner_is_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<Scanner>();
+    }
 
     #[test]
     fn compaction_and_explicit_wipe_clear_sensitive_window() -> Result<(), ScanError> {

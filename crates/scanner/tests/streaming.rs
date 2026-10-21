@@ -102,6 +102,50 @@ fn unbounded_multiline_rules_are_guarded_not_omitted() -> Result<(), Box<dyn std
 }
 
 #[test]
+fn completed_nongreedy_records_do_not_poison_later_windows()
+-> Result<(), Box<dyn std::error::Error>> {
+    let scanner = scanner(r"BEGIN(?P<TOKEN>(?s:.+?))END", 31)?;
+    let mut input = b"BEGINabcdEND\n".to_vec();
+    input.extend_from_slice(&b"ordinary\n".repeat(1000));
+    input.extend_from_slice(b"BEGINefghEND\n");
+    assert_eq!(scanner.scan(input.as_slice(), |_| Ok(()))?.findings, 2);
+    Ok(())
+}
+
+#[test]
+fn guard_priority_is_independent_for_every_rule() -> Result<(), Box<dyn std::error::Error>> {
+    let database = RulesDatabase::from_rules(vec![
+        Rule::new(RuleSyntax::new(
+            "fixture.short",
+            "Synthetic short",
+            r"BEGIN(?s:.+?)END",
+        )),
+        Rule::new(RuleSyntax::new(
+            "fixture.long",
+            "Synthetic long",
+            r"BEGIN(?s:.+)SUFFIX",
+        )),
+    ])?;
+    let scanner = Scanner::new(
+        database,
+        Limits {
+            chunk_bytes: 31,
+            match_bytes: 256,
+            line_bytes: 128,
+            findings: 20,
+        },
+    )?;
+    let mut input = b"BEGINabcdEND\n".to_vec();
+    input.extend_from_slice(&b"ordinary\n".repeat(100));
+    input.extend_from_slice(b"SUFFIX\n");
+    assert_eq!(
+        scanner.scan(input.as_slice(), |_| Ok(())),
+        Err(ScanError::MatchTooLarge)
+    );
+    Ok(())
+}
+
+#[test]
 fn anchors_are_not_fabricated_at_window_boundaries() -> Result<(), Box<dyn std::error::Error>> {
     let scanner = scanner(r"\Asecret|(?m:^demo_[a-z]{4}$)|tail\z", 3)?;
     let mut input = b"benign\n".repeat(100);
@@ -139,6 +183,42 @@ fn budgets_io_utf8_and_consumer_errors_block() -> Result<(), Box<dyn std::error:
     assert_eq!(
         binary.scan(&[255; 4][..], |_| Ok(())),
         Err(ScanError::UnsupportedInput)
+    );
+    Ok(())
+}
+
+#[test]
+fn utf8_codepoints_split_across_reads_and_windows() -> Result<(), Box<dyn std::error::Error>> {
+    for chunk in 1..=8 {
+        let scanner = scanner(r"BEGIN(?P<TOKEN>(?:秘密|\n)+)END", chunk)?;
+        let mut input = b"ordinary\n".repeat(100);
+        let offset = input.len() as u64 + 5;
+        input.extend_from_slice("BEGIN秘密\n秘密END\n".as_bytes());
+        let summary = scanner.scan(input.as_slice(), |finding| {
+            assert_eq!(finding.line(), 101);
+            assert_eq!(finding.byte_range(), offset..offset + 13);
+            assert!(finding.raw().bytes().eq("秘密\n秘密".bytes()));
+            Ok(())
+        })?;
+        assert_eq!(summary.findings, 1);
+    }
+    let scanner = crate::scanner("fixture_[a-z]{8}", 1)?;
+    assert_eq!(scanner.scan(&b"\xff\n\x80\n"[..], |_| Ok(()))?.findings, 0);
+    Ok(())
+}
+
+#[test]
+fn eof_anchored_oversize_match_fails_at_close() -> Result<(), Box<dyn std::error::Error>> {
+    let scanner = scanner(r"BEGIN(?P<TOKEN>[a-z\n]+)\z", 7)?;
+    let mut exact = b"BEGIN".to_vec();
+    exact.extend_from_slice(&b"a\n".repeat(125));
+    exact.push(b'a');
+    assert_eq!(exact.len(), 256);
+    assert_eq!(scanner.scan(exact.as_slice(), |_| Ok(()))?.findings, 1);
+    exact.push(b'\n');
+    assert_eq!(
+        scanner.scan(exact.as_slice(), |_| Ok(())),
+        Err(ScanError::MatchTooLarge)
     );
     Ok(())
 }

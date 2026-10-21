@@ -13,13 +13,42 @@ not automatically trustworthy: review upstream changes and advisories before upg
 
 | Dependency | Upstream | Revision | Scope |
 | --- | --- | --- | --- |
-| Kingfisher scanner/core/rules | https://github.com/mongodb/kingfisher | `c0a65103432434b2e4f502d519ed25566faa282e` | Standalone feasibility only; scanner 2.0.0, core 1.0.4, rules 2.0.0; no validator features |
+| Kingfisher scanner/core/rules | https://github.com/mongodb/kingfisher | `c0a65103432434b2e4f502d519ed25566faa282e` | `crates/scanner` integration under validation; scanner 2.0.0, core 1.0.4, rules 2.0.0; no validator features |
 
 The spike locks registry transitive packages, including published Vectorscan/sys 0.1.1. Kingfisher
 scanner/core use Apache-2.0; rules declare Apache-2.0 AND MIT. Audit the full graph and embedded
 catalog notices before production adoption. Changes to detection catalogs require planted/benign
 corpus comparison, not only compilation. The transfer manager will receive its own immutable
 revision entry when the S3 adapter introduces it; no moving revision is preapproved.
+
+## Reviewed scanner exceptions (issue #17)
+
+Owner: repository maintainer. All exceptions expire **2026-11-21**; the real
+supply-chain hook checks expiry, exact crate versions and attribution. PR #13
+reviews admission; #17 tracks upstream removal. Duplicate bans remain enabled:
+only incompatible, exact-version transitive APIs listed in deny.toml are skipped.
+The lockfile pins both versions; new versions are not implicitly approved.
+
+Unmaintained anymap2 is reached through Liquid (validation templates are not
+executed); term_size through tokei (terminal rendering is not called);
+unsafe-libyaml through serde_yaml (only immutable embedded catalog YAML is parsed
+by builtin startup, never file/input YAML). These are maintenance exceptions,
+not vulnerability waivers. There is no safe semver update for these edges;
+replacing an upstream parser is a separate reviewed dependency change.
+
+License exceptions are exact-package scoped: CC0-1.0 for bip39/bitcoin_hashes/
+hex-conservative; permissive Zlib for foldhash/zlib-rs; permissive BSL-1.0 for
+xxhash-rust; MPL-2.0 for unmodified colored. Preserve MPL notices and supply that
+crate's source with binary distribution; file-level obligations do not relicense
+the application's MIT source. libfuzzer-sys 0.4.13 additionally uses permissive
+NCSA and belongs only to the isolated fuzz workspace. Preserve all upstream
+notices when distributing. No license category is globally disabled.
+
+The isolated fuzz workspace has its own committed lockfile and cargo-deny gate.
+CI installs cargo-fuzz 0.13.2 and nightly-2026-10-20, distinct from the workspace
+and Verus compilers. The explicit comparison tool uses TruffleHog 3.99.2 release
+archives with checked SHA-256 (Linux x86_64/macOS arm64); it is test tooling only,
+not a production dependency, and credential verification/update checks are off.
 
 ## Separate compiler and verifier pins
 

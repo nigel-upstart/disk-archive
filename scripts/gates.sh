@@ -3,6 +3,7 @@ set -euo pipefail
 case ${1:?gate required} in
 fmt)
 	cargo fmt --all --check
+	cargo fmt --manifest-path fuzz/Cargo.toml --check
 	taplo fmt --check
 	shfmt -d scripts/*.sh
 	;;
@@ -26,7 +27,9 @@ coverage)
 	;;
 supply-chain)
 	python3 scripts/policy.py workspace
+	python3 scripts/policy.py exceptions
 	cargo deny check
+	cargo deny --manifest-path fuzz/Cargo.toml check
 	cargo machete
 	;;
 secrets)
