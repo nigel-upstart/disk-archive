@@ -1,4 +1,4 @@
-<!-- Mirror of https://github.com/nigel-upstart/disk-archive/issues/5 as opened. The issue is the source of truth; git rm this file when #5 closes or if it drifts. -->
+<!-- Mirror of https://github.com/nigel-upstart/disk-archive/issues/5 (synchronized during PR #9). The issue is the source of truth; git rm this file when #5 closes or if it drifts. -->
 
 # #5: Streaming multipart uploads via aws-s3-transfer-manager-rs (developer preview) with end-to-end integrity
 
@@ -6,7 +6,7 @@ Part of #1. **Blocked by** #4.
 
 ## Scope
 
-Large archives (the legacy run saw multi-GB logs) need multipart uploads; single PutObject caps at 5 GiB. Use the AWS S3 Transfer Manager for Rust instead of hand-rolling multipart.
+Large archives need multipart uploads. AWS documents a 5 GB single-PUT limit; choose a conservative single-part threshold strictly below 5,000,000,000 bytes (decimal units). Use the AWS S3 Transfer Manager for Rust instead of hand-rolling multipart.
 
 ### Dependency
 - Package `aws-sdk-s3-transfer-manager` from `https://github.com/awslabs/aws-s3-transfer-manager-rs`.

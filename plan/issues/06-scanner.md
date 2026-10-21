@@ -1,4 +1,4 @@
-<!-- Mirror of https://github.com/nigel-upstart/disk-archive/issues/6 as opened. The issue is the source of truth; git rm this file when #6 closes or if it drifts. -->
+<!-- Mirror of https://github.com/nigel-upstart/disk-archive/issues/6 (synchronized during PR #9). The issue is the source of truth; git rm this file when #6 closes or if it drifts. -->
 
 # #6: Replace the trufflehog subprocess with an in-process Rust secret scanner
 
@@ -25,7 +25,7 @@ In the legacy run the scan, redact and verify queues stayed saturated while the 
 
 ## Requirements
 
-- **API:** `scan(reader) -> Vec<Finding { rule_id, line, byte_range, raw }>`. It is synchronous and CPU-bound and runs on the bounded blocking pool.
+- **API:** `scan(reader, consume_finding)` emits `Finding { rule_id, line, byte_range, raw }` incrementally through a bounded callback or channel. It is synchronous and CPU-bound and runs on the bounded blocking pool. Consumers must consume or redact each chunk's findings before reading more input; never accumulate all findings or raw values for a whole file.
 - **Streaming:** multi-GB files are scanned in chunks with overlap of at least the maximum rule match length (or memory-mapped), so memory stays bounded.
 - **No network, ever:** credential validation and live checks are disabled at compile time where possible. A test asserts the scanner makes no network calls.
 - **Secret hygiene:**
@@ -38,6 +38,7 @@ In the legacy run the scan, redact and verify queues stayed saturated while the 
 ## Detection parity
 
 - **Planted corpus:** a seeded synthetic corpus with fake secrets covering the detector families seen in agent and terminal logs (cloud keys, GitHub/GitLab tokens, Slack, JWTs, private keys, env-var assignments, DB URLs). Recall must be ≥ `trufflehog` (pinned version, `--no-verification`) for every family.
+- **False-positive bound:** each detector family must produce zero unexpected findings on curated benign fixtures (ordinary prose, code, URLs, and non-secret configuration). Report per-family false-positive counts alongside recall; regression tests must reject broad matches that would cause unrelated redaction or line deletion.
 - **Local-only coverage report:** a script maps the detector **names and counts** in an existing legacy state DB to the new rule IDs. No values are read, and the output is never committed.
 - The regex rules in the legacy redactor (env-var assignments and PEM blocks) stay as an extra layer next to the scanner.
 

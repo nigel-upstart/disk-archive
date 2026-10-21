@@ -1,4 +1,4 @@
-<!-- Mirror of https://github.com/nigel-upstart/disk-archive/issues/3 as opened. The issue is the source of truth; git rm this file when #3 closes or if it drifts. -->
+<!-- Mirror of https://github.com/nigel-upstart/disk-archive/issues/3 (synchronized during PR #9). The issue is the source of truth; git rm this file when #3 closes or if it drifts. -->
 
 # #3: Adopt tokio and convert the staged pipeline to async
 
@@ -16,7 +16,7 @@ Move the staged pipeline (discover → scan → redact → verify → upload →
   - `max_blocking_threads` bounded from config
 
 ### Stages
-- Each stage reads from a bounded `tokio::sync::mpsc` channel whose capacity comes from config. Per-stage concurrency is limited by a `Semaphore` or `JoinSet`, so upstream stages block when downstream ones are full.
+- Each stage reads from a bounded `tokio::sync::mpsc` channel whose capacity comes from config. Per-stage concurrency is limited by semaphore permits acquired before receiving or spawning work, or by a fixed worker count, so upstream stages block when downstream ones are full. A `JoinSet` may track tasks but is not a concurrency limit.
 - Discovery walks the configured roots on the blocking pool (`walkdir`) and feeds the first channel.
 - CPU-bound work (scanning, redaction, gzip, sha256) runs through a crate-level bounded `spawn_blocking` wrapper, never directly on runtime workers.
 - Per-file errors are recorded in state and the pipeline keeps going, as in the legacy version.

@@ -18,7 +18,7 @@
 
 ## GitHub issues are the source of truth
 
-The files in `issues/` mirror GitHub issues #1–#8 as they were when opened. If an issue and its
+The files in `issues/` mirror GitHub issues #1–#8 and are synchronized when their requirements change. If an issue and its
 mirror disagree, the issue wins, and the mirror should be fixed or deleted.
 
 ## Resuming after a restart

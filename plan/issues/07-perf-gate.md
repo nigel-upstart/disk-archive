@@ -1,4 +1,4 @@
-<!-- Mirror of https://github.com/nigel-upstart/disk-archive/issues/7 as opened. The issue is the source of truth; git rm this file when #7 closes or if it drifts. -->
+<!-- Mirror of https://github.com/nigel-upstart/disk-archive/issues/7 (synchronized during PR #9). The issue is the source of truth; git rm this file when #7 closes or if it drifts. -->
 
 # #7: Permanent performance regression gate on fixed-size GitHub-hosted runners
 
@@ -13,7 +13,8 @@ A **permanent** performance test: the first values recorded become a ceiling tha
 - A dedicated `perf` workflow job on a pinned runner image (e.g. `ubuntu-24.04`, never `-latest`). It is a required check on PRs.
 - Every result carries an **environment fingerprint:** runner image version, `nproc`, total memory, CPU model, kernel, `rustc` version, and the scanner rules revision.
   - **Time-based** metrics gate only against a baseline with the same CPU model and `nproc`. On a mismatch they are reported as advisory.
-  - **Deterministic** metrics gate regardless of the fingerprint.
+  - **Instruction counts and cache estimates** gate only with a matching compiler toolchain fingerprint (rustc/LLVM version and build flags/profile). A mismatch requires an explicit reviewed baseline refresh before those metrics can gate; CI never refreshes automatically.
+  - **Exact behavioral counters** gate regardless of the hardware fingerprint.
 - GitHub-hosted runner sizes differ between private and public repositories, so the **initial baseline is captured after the repository goes public**. Until then the job runs record-only.
 
 ## Metrics
