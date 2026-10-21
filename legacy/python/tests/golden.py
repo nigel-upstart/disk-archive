@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -32,18 +33,21 @@ def render() -> dict:
             path.write_bytes(bytes.fromhex(case["input_hex"]))
             os.utime(path, ns=TIMES_NS)
             before = path.stat()
-            count = redact_file(
-                path,
-                [Finding(**finding) for finding in case["findings"]],
-                drop_lines=set(case["drop_lines"]),
-            )
-            after = path.stat()
-            if (before.st_atime_ns, before.st_mtime_ns) != (after.st_atime_ns, after.st_mtime_ns):
-                raise AssertionError(
-                    f"Timestamps changed: {case['id']}: "
-                    f"{(before.st_atime_ns, before.st_mtime_ns)} -> "
-                    f"{(after.st_atime_ns, after.st_mtime_ns)}"
+            # Make the source stat deterministic and spy on the real restoration:
+            # host indexers can read temp files and race any later atime observation.
+            # Legacy restores float seconds, not nanoseconds; do not claim more.
+            with (
+                patch.object(Path, "stat", return_value=before),
+                patch("session_archiver.redactor.os.utime", wraps=os.utime) as restore,
+            ):
+                count = redact_file(
+                    path,
+                    [Finding(**finding) for finding in case["findings"]],
+                    drop_lines=set(case["drop_lines"]),
                 )
+                restore.assert_called_once_with(path, (before.st_atime, before.st_mtime))
+            if path.stat().st_mtime_ns != before.st_mtime_ns:
+                raise AssertionError(f"mtime changed: {case['id']}")
             results.append({"id": case["id"], "output_hex": path.read_bytes().hex(), "replacements": count})
     return {"schema_version": 1, "cases": results}
 
