@@ -146,6 +146,10 @@ class CacheKeyTests(unittest.TestCase):
         original = cache_native.fingerprint(lock)
         lock["package"][-1]["checksum"] = "changed"
         self.assertEqual(original, cache_native.fingerprint(lock))
+        disambiguated = copy.deepcopy(lock)
+        disambiguated["package"].append({"name": "cc", "version": "2.0.0", "checksum": "unrelated-new-API"})
+        disambiguated["package"][1]["dependencies"] = ["cc 1.0.0"]
+        self.assertEqual(original, cache_native.fingerprint(disambiguated))
         for index in range(4):
             changed = copy.deepcopy(lock)
             changed["package"][index]["checksum"] += "change"

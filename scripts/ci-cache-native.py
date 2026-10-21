@@ -20,7 +20,8 @@ def fingerprint(lock: dict) -> str:
         identity = (package["name"], package["version"], package.get("source", ""))
         if identity in visited:
             continue
-        visited[identity] = package
+        resolved = []
+        visited[identity] = {**package, "dependencies": resolved}
         for dependency in package.get("dependencies", []):
             name, *rest = dependency.split(" ")
             matches = [p for p in packages if p["name"] == name
@@ -28,8 +29,12 @@ def fingerprint(lock: dict) -> str:
                        and (len(rest) < 2 or p.get("source", "") == rest[1][1:-1])]
             if len(matches) != 1:
                 raise ValueError("ambiguous native dependency")
+            target = matches[0]
+            resolved.append((target["name"], target["version"], target.get("source", "")))
             pending.extend(matches)
-    # Canonical package contents include registry checksums and immutable git sources.
+        resolved.sort()
+    # Canonical identities ignore Cargo's optional dependency-name disambiguation
+    # syntax, but retain actual versions/checksums/git sources and graph edges.
     payload = json.dumps([visited[key] for key in sorted(visited)], sort_keys=True).encode()
     return hashlib.sha256(payload).hexdigest()
 
