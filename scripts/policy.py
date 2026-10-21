@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import hashlib
 import json
 import pathlib
@@ -129,6 +130,31 @@ def check_manifest(path: pathlib.Path) -> None:
                     raise ValueError(f"git dependency needs an upstream-tracking note in docs/dependencies.md: {name}")
 
 
+def check_scanner_features(name: str, features: list[str]) -> None:
+    """Byte-only scanner: reject validators/aliases and future opt-in capabilities."""
+    if name == "kingfisher-scanner" and set(features) - {"default"}:
+        raise ValueError("kingfisher-scanner must remain byte-only; validation and all opt-in features are forbidden")
+
+
+def check_exceptions(text: str, today: datetime.date | None = None) -> None:
+    """Exceptions are exact, attributed, tracked and expire in actual hooks/CI."""
+    data = tomllib.loads(text)
+    today = today or datetime.datetime.now(datetime.timezone.utc).date()
+    for section, key in (("advisories", "ignore"), ("bans", "skip"), ("licenses", "exceptions")):
+        for item in data.get(section, {}).get(key, []):
+            if not isinstance(item, dict):
+                raise ValueError("dependency exceptions require structured attribution")
+            reason = item.get("reason", "")
+            if section == "licenses":
+                header = re.search(r"(?m)^# (Owner:[^\n]+)\nexceptions = ", text)
+                reason = header[1] if header else ""
+            expiry = re.search(r"expires (\d{4}-\d{2}-\d{2})", reason)
+            if not expiry or not re.search(r"Owner: [^;]+; #\d+;", reason):
+                raise ValueError("dependency exception requires owner, issue and expiry")
+            if datetime.date.fromisoformat(expiry[1]) <= today:
+                raise ValueError("dependency exception expired; resolve tracking issue")
+            if section != "advisories" and not re.fullmatch(r"[A-Za-z0-9_-]+@\d+\.\d+\.\d+(?:[+.-][A-Za-z0-9.+-]+)?", item.get("crate", "")):
+                raise ValueError("dependency exceptions must pin an exact crate version")
 def check_dns_vendor(root: pathlib.Path) -> None:
     """Pin the registry archive identity and every byte of the reviewed compatibility patch."""
     vendor = root / "vendor/aws-smithy-dns"
@@ -218,6 +244,7 @@ def check_workspace() -> None:
                 raise ValueError("verified metadata must contain zero dependencies")
     for node in metadata["resolve"]["nodes"]:
         package = next(package for package in metadata["packages"] if package["id"] == node["id"])
+        check_scanner_features(package["name"], node["features"])
         if package["name"] == "aws-config" and "credentials-process" in node["features"]:
             raise ValueError("aws-config credentials-process must remain disabled, including transitive features")
 
@@ -233,6 +260,8 @@ def main() -> None:
     mode = sys.argv[1]
     if mode in ("staged", "tracked"):
         check_files(mode == "staged")
+    elif mode == "exceptions":
+        check_exceptions(pathlib.Path("deny.toml").read_text())
     elif mode == "workspace":
         check_workspace()
     elif mode == "vendor":

@@ -16,14 +16,17 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: '4'
+      VECTORSCAN_OFFLINE: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
       - name: Install native scanner prerequisites
-        run: sudo apt-get update && sudo apt-get install -y build-essential cmake libboost-dev ragel pkg-config
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake libboost-dev ragel pkg-config strace
       - name: Install pinned workspace Rust
         run: |
           pin=$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')
@@ -33,13 +36,89 @@ jobs:
           version: 2026.10.15
       - name: Install isolated Verus
         run: bash scripts/verus-install.sh
+      - name: Fingerprint workspace/native compiler inputs
+        id: workspace-native
+        run: bash scripts/ci-cache-key.sh workspace
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          key: native-v2-${{ runner.os }}-${{ runner.arch }}-workspace-debug-coverage-${{ github.ref }}-${{ steps.workspace-native.outputs.digest }}-${{ steps.workspace-native.outputs.native }}-${{ hashFiles('Cargo.toml', 'rust-toolchain.toml', 'mise.toml', 'crates/scanner/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', '.github/workflows/ci.yml') }}-${{ hashFiles('Cargo.lock') }}
+          # Reuse across Rust-only lock churn only on this ref or reviewed main.
+          # Compiler/CPU/profile/flags, native closure and build inputs stay exact.
+          restore-keys: |
+            native-v2-${{ runner.os }}-${{ runner.arch }}-workspace-debug-coverage-${{ github.ref }}-${{ steps.workspace-native.outputs.digest }}-${{ steps.workspace-native.outputs.native }}-${{ hashFiles('Cargo.toml', 'rust-toolchain.toml', 'mise.toml', 'crates/scanner/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', '.github/workflows/ci.yml') }}-
+            native-v2-${{ runner.os }}-${{ runner.arch }}-workspace-debug-coverage-refs/heads/main-${{ steps.workspace-native.outputs.digest }}-${{ steps.workspace-native.outputs.native }}-${{ hashFiles('Cargo.toml', 'rust-toolchain.toml', 'mise.toml', 'crates/scanner/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', '.github/workflows/ci.yml') }}-
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target/debug/.fingerprint
+            target/debug/build
+            target/debug/deps
+            target/llvm-cov-target/debug/.fingerprint
+            target/llvm-cov-target/debug/build
+            target/llvm-cov-target/debug/deps
+            !**/*.log
+            !**/build/**/output
+            !**/build/**/stderr
       - run: task check
       - run: task ci:secrets
+      - name: Audit planted native scanner with network denied
+        run: bash scripts/scanner-offline.sh
+      - name: Pinned no-verification comparison (names and counts only)
+        run: bash scripts/scanner-parity.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: cyclonedx-sbom
           path: target/sbom/*.cdx.json
           if-no-files-found: error
+  scanner-fuzz:
+    name: Full-catalog scanner/core fuzz
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: '4'
+      VECTORSCAN_OFFLINE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Native prerequisites and separately pinned fuzz compiler
+        run: |
+          sudo apt-get update && sudo apt-get install -y build-essential cmake libboost-dev ragel pkg-config
+          rustup toolchain install nightly-2026-10-20 --profile minimal --component rust-src
+          cargo install cargo-fuzz --version 0.13.2 --locked
+      - name: Fingerprint separate nightly/ASan compiler inputs
+        id: fuzz-native
+        run: bash scripts/ci-cache-key.sh fuzz
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          key: native-v2-${{ runner.os }}-${{ runner.arch }}-nightly-2026-10-20-release-asan-${{ github.ref }}-${{ steps.fuzz-native.outputs.digest }}-${{ steps.fuzz-native.outputs.native }}-${{ hashFiles('fuzz/Cargo.toml', 'Cargo.toml', 'crates/scanner/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', '.github/workflows/ci.yml') }}-${{ hashFiles('fuzz/Cargo.lock') }}
+          # Reuse across Rust-only lock churn only on this ref or reviewed main.
+          # Compiler/CPU/profile/flags, native closure and build inputs stay exact.
+          restore-keys: |
+            native-v2-${{ runner.os }}-${{ runner.arch }}-nightly-2026-10-20-release-asan-${{ github.ref }}-${{ steps.fuzz-native.outputs.digest }}-${{ steps.fuzz-native.outputs.native }}-${{ hashFiles('fuzz/Cargo.toml', 'Cargo.toml', 'crates/scanner/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', '.github/workflows/ci.yml') }}-
+            native-v2-${{ runner.os }}-${{ runner.arch }}-nightly-2026-10-20-release-asan-refs/heads/main-${{ steps.fuzz-native.outputs.digest }}-${{ steps.fuzz-native.outputs.native }}-${{ hashFiles('fuzz/Cargo.toml', 'Cargo.toml', 'crates/scanner/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', '.github/workflows/ci.yml') }}-
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            fuzz/target/release/.fingerprint
+            fuzz/target/release/build
+            fuzz/target/release/deps
+            fuzz/target/x86_64-unknown-linux-gnu/release/.fingerprint
+            fuzz/target/x86_64-unknown-linux-gnu/release/build
+            fuzz/target/x86_64-unknown-linux-gnu/release/deps
+            !**/*.log
+            !**/build/**/output
+            !**/build/**/stderr
+      - name: Build isolated fuzz target (no input or findings loaded)
+        run: |
+          cargo +nightly-2026-10-20 fetch --locked --manifest-path fuzz/Cargo.toml
+          cargo +nightly-2026-10-20 fuzz build scanner_redactor
+      - name: Fuzz actual scanner and core without exposing fuzzer output
+        run: python3 scripts/scanner-fuzz.py
   verus:
     name: Isolated Verus integration
     runs-on: ubuntu-24.04

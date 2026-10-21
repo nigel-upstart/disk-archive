@@ -14,7 +14,7 @@ not automatically trustworthy: review upstream changes and advisories before upg
 | Dependency | Upstream | Revision | Scope |
 | --- | --- | --- | --- |
 | AWS S3 transfer manager + synthetic mock | https://github.com/awslabs/aws-s3-transfer-manager-rs | `dc391970cd36e0d6d6ed044dcb3351b26131e9be` | Preview 0.3.1; Apache-2.0; manifest-only audited local patch |
-| Kingfisher scanner/core/rules | https://github.com/mongodb/kingfisher | `c0a65103432434b2e4f502d519ed25566faa282e` | Standalone feasibility only; scanner 2.0.0, core 1.0.4, rules 2.0.0; no validator features |
+| Kingfisher scanner/core/rules | https://github.com/mongodb/kingfisher | `c0a65103432434b2e4f502d519ed25566faa282e` | `crates/scanner` integration under validation; scanner 2.0.0, core 1.0.4, rules 2.0.0; no validator features |
 
 The spike locks registry transitive packages, including published Vectorscan/sys 0.1.1. Kingfisher
 scanner/core use Apache-2.0; rules declare Apache-2.0 AND MIT. Audit the full graph and embedded
@@ -45,6 +45,38 @@ Exact duplicate-API and foldhash-Zlib allowances in deny.toml expire 2026-11-21;
 not vulnerability waivers. The macOS-only core-foundation duplicate is required by Hickory's
 system-configuration DNS integration versus rustls-native-certs' security-framework ABI.
 
+## Reviewed scanner exceptions (issue #17)
+
+Owner: repository maintainer. All exceptions expire **2026-11-21**; the real
+supply-chain hook checks expiry, exact crate versions and attribution. PR #13
+reviews admission; #17 tracks upstream removal. Duplicate bans remain enabled:
+only incompatible, exact-version transitive APIs listed in deny.toml are skipped.
+The lockfile pins both versions; new versions are not implicitly approved.
+The merged SDK/scanner graph additionally needs exact `untrusted 0.7.1` alongside
+0.9.0: Kingfisher's AWS-LC parser and SDK rustls-webpki require incompatible APIs.
+This is an issue #17 duplicate allowance, not an advisory waiver.
+
+Unmaintained anymap2 is reached through Liquid (validation templates are not
+executed); term_size through tokei (terminal rendering is not called);
+unsafe-libyaml through serde_yaml (only immutable embedded catalog YAML is parsed
+by builtin startup, never file/input YAML). These are maintenance exceptions,
+not vulnerability waivers. There is no safe semver update for these edges;
+replacing an upstream parser is a separate reviewed dependency change.
+
+License exceptions are exact-package scoped: CC0-1.0 for bip39/bitcoin_hashes/
+hex-conservative; permissive Zlib for foldhash/zlib-rs; permissive BSL-1.0 for
+xxhash-rust; MPL-2.0 for unmodified colored. Preserve MPL notices and supply that
+crate's source with binary distribution; file-level obligations do not relicense
+the application's MIT source. libfuzzer-sys 0.4.13 additionally uses permissive
+NCSA and belongs only to the isolated fuzz workspace. Preserve all upstream
+notices when distributing. No license category is globally disabled.
+
+The isolated fuzz workspace has its own committed lockfile and cargo-deny gate.
+CI installs cargo-fuzz 0.13.2 and nightly-2026-10-20, distinct from the workspace
+and Verus compilers. The explicit comparison tool uses TruffleHog 3.99.2 release
+archives with checked SHA-256 (Linux x86_64/macOS arm64); it is test tooling only,
+not a production dependency, and credential verification/update checks are off.
+
 ## Separate compiler and verifier pins
 
 The workspace stable pin belongs to the normal build. `tools/verus.env` pins Verus
@@ -71,6 +103,29 @@ Select AWS-LC for rustls, not an additional ring provider, unless a reviewed com
 exception requires it. Detection-only Kingfisher rules already depend on AWS-LC. Audit resolved
 features when integrating: validation, credential subprocess providers, unsolicited network
 behavior and duplicated crypto providers must not arrive through transitive defaults.
+
+## CI build-artifact reuse
+
+CI uses actions/cache v6.1.0 at
+55cc8345863c7cc4c66a329aec7e433d2d1c52a9 (upstream release checked with gh).
+Exact keys include OS/architecture, ref, compiler/native-tool/CPU fingerprint,
+workspace or nightly-ASan profile, lockfile, toolchain/manifest and native build
+inputs. A fallback may omit only the final full-lock digest: compiler, native
+closure (locked Vectorscan/sys and all recursive build dependencies, including
+checksums/git identities), CPU, flags, profile and native manifests/build scripts
+remain identical. Restore prefixes name only the current ref and reviewed main;
+no arbitrary feature/PR ref can supply a fallback. Fork PRs neither restore nor
+save. Native closure ambiguity/missing identities fail instead of broadening keys.
+Rust-only lock churn can reuse native artifacts; all Rust fingerprints and gates
+still run. Workspace debug/coverage and nightly ASan remain separate.
+
+Only registry archives/index, public dependency git databases and selected
+compiled dependency/native directories are cached. Runtime fixture/log/trace/
+SBOM/credential directories and generated fuzz corpora are excluded; build log
+files are excluded too. Nightly fuzz artifacts use a separate key and paths.
+Every hit still runs unchanged gates. A hit is reuse evidence, not a fresh build
+or runtime-performance measurement; retain the first uncached CI result as cold
+build proof. This saves native rebuild time, not scanner runtime.
 
 ## Required production admission evidence
 

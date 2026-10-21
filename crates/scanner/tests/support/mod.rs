@@ -1,0 +1,265 @@
+//! Deterministic synthetic corpus and independently planted location manifest.
+use std::fmt::Write;
+
+use base64::{
+    Engine as _,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
+};
+use zeroize::Zeroizing;
+
+/// The planting manifest is produced by the fixture builder, never by detection.
+pub(crate) struct Plant {
+    pub(crate) family: &'static str,
+    pub(crate) rule: &'static str,
+    pub(crate) range: std::ops::Range<u64>,
+}
+
+pub(crate) const BENIGN: &[&str] = &[
+    "Ordinary prose about clouds, source control and database migrations.\n",
+    "fn retries(timeout: u64) -> u64 { timeout + 1 }\n",
+    "https://docs.example.invalid/tutorial?q=configuration\n",
+    "timeout=30\nretries=3\nlog_level=info\nregion=local\n",
+    "curl https://example.invalid/public\nAuthorization header documentation only\n",
+    "Public configuration: database=app; host=db.invalid; user=guest\n",
+    "Unicode prose: 秘密 means secret; λ is a Greek letter.\n",
+];
+
+pub(crate) type EncodedFixtures = Vec<(&'static str, Zeroizing<Vec<u8>>)>;
+
+fn wrap_base64(encoded: &[u8]) -> Zeroizing<Vec<u8>> {
+    let mut wrapped = Zeroizing::new(Vec::with_capacity(
+        encoded.len() + encoded.len().div_ceil(76) * 2,
+    ));
+    for line in encoded.chunks(76) {
+        wrapped.extend_from_slice(line);
+        wrapped.extend_from_slice(b"\r\n");
+    }
+    wrapped
+}
+
+fn push_wrapped_layouts(carriers: &mut EncodedFixtures, padded: &[u8]) {
+    let encoded = Zeroizing::new(STANDARD.encode(padded));
+    for (case, name) in [
+        "base64-indented",
+        "base64-yaml-block",
+        "base64-first-prefix",
+        "base64-trailing-space",
+        "base64-json-indented",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut wrapped = Zeroizing::new(Vec::new());
+        if case == 1 {
+            wrapped.extend_from_slice(b"data: |\n");
+        } else if case == 4 {
+            wrapped.extend_from_slice(b"{\"out\":\"");
+        }
+        for (index, line) in encoded.as_bytes().chunks(76).enumerate() {
+            if matches!(case, 0 | 1 | 4) {
+                wrapped.extend_from_slice(b" \t ");
+            } else if case == 2 && index == 0 {
+                wrapped.extend_from_slice(b"secret: ");
+            }
+            wrapped.extend_from_slice(line);
+            wrapped.extend_from_slice(if case == 3 {
+                b" \t\n"
+            } else if case == 4 {
+                b"\\n"
+            } else {
+                b"\n"
+            });
+        }
+        if case == 4 {
+            wrapped.extend_from_slice(b"\"}\n");
+        }
+        carriers.push((name, wrapped));
+    }
+}
+
+pub(crate) fn encoding_variants() -> Result<EncodedFixtures, Box<dyn std::error::Error>> {
+    let (input, manifest) = corpus();
+    let plant = manifest
+        .iter()
+        .find(|plant| plant.family == "github")
+        .ok_or("missing synthetic family")?;
+    let value = input
+        .get(usize::try_from(plant.range.start)?..usize::try_from(plant.range.end)?)
+        .ok_or("invalid synthetic manifest")?;
+    let mut json_unicode = String::new();
+    let mut url_percent = String::new();
+    for byte in value {
+        write!(&mut json_unicode, "\\u{byte:04x}")?;
+        write!(&mut url_percent, "%{byte:02X}")?;
+    }
+    let mut carriers = vec![
+        (
+            "json-unicode",
+            Zeroizing::new(format!("{{\"message\":\"{json_unicode}\"}}\n").into_bytes()),
+        ),
+        (
+            "url-percent",
+            Zeroizing::new(format!("https://example.invalid/?value={url_percent}\n").into_bytes()),
+        ),
+        (
+            "base64",
+            Zeroizing::new(
+                format!("{{\"message\":\"{}\"}}\n", STANDARD.encode(value)).into_bytes(),
+            ),
+        ),
+    ];
+    carriers.push((
+        "base64-assignment",
+        Zeroizing::new(format!("PAYLOAD={}\n", STANDARD.encode(value)).into_bytes()),
+    ));
+    carriers.push((
+        "base64-prefixed",
+        Zeroizing::new(format!("secret_{}", STANDARD.encode(value)).into_bytes()),
+    ));
+    let mut padded = Zeroizing::new(vec![b'x'; 48]);
+    padded.push(b' ');
+    padded.extend_from_slice(value);
+    padded.extend_from_slice(b" public");
+    carriers.push((
+        "base64-wrapped",
+        wrap_base64(STANDARD.encode(&padded).as_bytes()),
+    ));
+    push_wrapped_layouts(&mut carriers, &padded);
+    let mut binary = Zeroizing::new(vec![0xfb, 0xff, 0xff, b' ']);
+    binary.extend_from_slice(value);
+    binary.push(b' ');
+    let url_safe = Zeroizing::new(URL_SAFE_NO_PAD.encode(&binary));
+    if std::str::from_utf8(&binary).is_ok() || !url_safe.contains('-') || !url_safe.contains('_') {
+        return Err(
+            "synthetic URL-safe fixture must exercise binary context and both alphabet symbols"
+                .into(),
+        );
+    }
+    carriers.push((
+        "base64-url-binary",
+        Zeroizing::new(url_safe.as_bytes().to_vec()),
+    ));
+    let text = std::str::from_utf8(value)?;
+    for (little, raw_name, b64_name, bom_name, wrapped_name) in [
+        (
+            true,
+            "utf16le",
+            "base64-utf16le",
+            "utf16le-bom",
+            "base64-utf16le-wrapped",
+        ),
+        (
+            false,
+            "utf16be",
+            "base64-utf16be",
+            "utf16be-bom",
+            "base64-utf16be-wrapped",
+        ),
+    ] {
+        let mut raw = Zeroizing::new(Vec::with_capacity(2 * text.len() + 2));
+        for unit in text.encode_utf16() {
+            raw.extend_from_slice(&if little {
+                unit.to_le_bytes()
+            } else {
+                unit.to_be_bytes()
+            });
+        }
+        let encoded = Zeroizing::new(STANDARD.encode(&raw));
+        carriers.push((wrapped_name, wrap_base64(encoded.as_bytes())));
+        carriers.push((b64_name, Zeroizing::new(encoded.as_bytes().to_vec())));
+        carriers.push((raw_name, raw.clone()));
+        let mut bom = Zeroizing::new(Vec::with_capacity(raw.len() + 2));
+        bom.extend_from_slice(&if little { [0xff, 0xfe] } else { [0xfe, 0xff] });
+        bom.extend_from_slice(&raw);
+        carriers.push((bom_name, bom));
+    }
+    Ok(carriers)
+}
+
+pub(crate) fn corpus() -> (Zeroizing<Vec<u8>>, Vec<Plant>) {
+    let mut input = Zeroizing::new(Vec::new());
+    let mut manifest = Vec::new();
+    let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    let token: String = alphabet.chars().cycle().take(16).collect();
+    let mixed = "aB3dE5gH7jK9mN2pQ4sT6vW8yZ1cF0iL";
+    let values = [
+        (
+            "cloud",
+            "betterleaks.aws-access-token",
+            format!("AKIA{token}"),
+        ),
+        (
+            "github",
+            "betterleaks.github-pat",
+            format!(
+                "ghp_{}",
+                mixed.repeat(2).chars().take(36).collect::<String>()
+            ),
+        ),
+        (
+            "gitlab",
+            "betterleaks.gitlab-pat",
+            format!("glpat-{}", mixed.chars().take(20).collect::<String>()),
+        ),
+        (
+            "slack",
+            "betterleaks.slack-bot-token",
+            format!(
+                "xoxb-{}-{}-{}",
+                1_234_567_890_u64,
+                9_876_543_210_u64,
+                mixed.chars().take(24).collect::<String>()
+            ),
+        ),
+        (
+            "jwt",
+            "betterleaks.jwt",
+            [
+                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9",
+                "eyJzdWIiOiJzeW50aGV0aWMiLCJleHAiOjB9",
+                "YUJjREVGR2hpSktMbW5PcFFyc1R1VndYeXphQkNERUY",
+            ]
+            .join("."),
+        ),
+        (
+            "private-key",
+            "betterleaks.private-key",
+            format!(
+                "-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----",
+                mixed.repeat(3)
+            ),
+        ),
+        (
+            "database",
+            "betterleaks.mongodb-connection-string",
+            format!("mongodb://fixture_user:{mixed}@db.invalid/example"),
+        ),
+    ];
+    for (family, rule, value) in values {
+        let value = Zeroizing::new(value);
+        input.extend_from_slice(b"synthetic fixture\n");
+        let start = input.len() as u64;
+        input.extend_from_slice(value.as_bytes());
+        let end = input.len() as u64;
+        input.push(b'\n');
+        manifest.push(Plant {
+            family,
+            rule,
+            range: start..end,
+        });
+    }
+    // This independent plant belongs to the core's legacy env-assignment layer,
+    // not to an invented native catalog rule.
+    input.extend_from_slice(b"SYNTHETIC_PASSWORD=");
+    let start = input.len() as u64;
+    let env_value = Zeroizing::new(mixed.chars().rev().collect::<String>());
+    input.extend_from_slice(env_value.as_bytes());
+    let end = input.len() as u64;
+    input.push(b'\n');
+    manifest.push(Plant {
+        family: "env",
+        rule: "core.env",
+        range: start..end,
+    });
+    (input, manifest)
+}

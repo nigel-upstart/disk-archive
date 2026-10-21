@@ -7,3 +7,8 @@ extend-exclude = [
   "target/",
   "vendor/",
 ]
+
+[default.extend-words]
+# Exact upstream detector/product names and native start-of-match terminology.
+canva = "canva"
+SOM = "SOM"

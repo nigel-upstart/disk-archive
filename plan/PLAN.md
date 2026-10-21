@@ -103,7 +103,6 @@ parentheses). Use the `anthropic/` and `openai-codex/` providers, not Bedrock, f
 
 | Wave | ID | Work | Issues | Archetype | Model @ effort (fallback) | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2 | F | In-process scanner: Kingfisher library spike → ADR → integration (or the in-house fallback), no-network and zeroize tests, fuzz target, planted-corpus parity versus `trufflehog` | #6 | terminal_heavy_implementation | `openai-codex/gpt-6.1-sol` @ high (`anthropic/claude-opus-5-5` @ high) | todo |
 | 3 | G | tokio pipeline, single SQLite writer task, cancellation and lock file, CLI (`--limit`, change-nothing `--dry-run`, `--workers`), manifest, end-to-end tests | #3 | median_repository_implementation | `anthropic/claude-opus-5-5` @ medium (`gpt-6.1-sol` @ high) | todo |
 | 3 | I | Perf harness: seeded corpus generator, criterion + gungraun benches, deterministic counters, statistical gate logic, record-only `perf` job | #7 (part) | terminal_heavy_implementation | `openai-codex/gpt-6.1-sol` @ high (`anthropic/claude-opus-5-5` @ high) | todo |
 | 4 | R | Independent read-only review, from a different vendor, of the delete-safety, redaction, and cancellation rules across the data plane; findings posted to the open PRs or new issues | — | code_review | `openai-codex/gpt-6-astra` @ high (`gpt-6.1-sol` @ medium) | todo |
