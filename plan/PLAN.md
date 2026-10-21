@@ -102,7 +102,6 @@ parentheses). Use the `anthropic/` and `openai-codex/` providers, not Bedrock, f
 
 | Wave | ID | Work | Issues | Archetype | Model @ effort (fallback) | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | B | Gates: toolchain pins (mise, `rust-toolchain.toml`), workspace skeleton, lint configs, base `deny.toml`, ast-grep rules + tests, `quiet-run.sh`, Taskfile, lefthook, SHA-pinned CI, SBOM job, `AGENTS.md` | #2 (base) | terminal_heavy_implementation | `openai-codex/gpt-6.1-sol` @ high (`anthropic/claude-opus-5-5` @ high) | todo |
 | 1 | P | `docs/design.md` + ADRs (language, verification scope, key layout, dry-run, scanner choice criteria); kernel API with a plain, unproved reference implementation; Verus feasibility spike (install, toolchain split, toy proof, go/no-go) | — | implementation_planning | `anthropic/claude-opus-5-5` @ high (`gpt-6.1-sol` @ high → `gpt-6-astra` @ high) | todo |
 | 2 | D | `crates/core`: config parsing (fails closed), finding model, streaming redactor using the kernels, injective key encoding, property tests, golden parity | — | median_repository_implementation | `anthropic/claude-opus-5-5` @ medium (`gpt-6.1-sol` @ high) | todo |
 | 2 | E | `crates/verified`: Verus specs and proofs (delete only after verified upload, key injectivity, no needle left after redaction, PEM state, cutoff arithmetic), plus Verus Task/hook/CI wiring | — | algorithmic_iterative_coding | `openai-codex/gpt-6.1-sol` @ medium (`anthropic/claude-opus-5-5` @ medium; after a failed attempt, `gpt-6-luna` @ max) | todo |
