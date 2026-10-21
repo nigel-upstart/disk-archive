@@ -2,9 +2,9 @@ pre-commit:
   parallel: false
   commands:
     gates:
-      run: mise exec -- task hook:commit
+      run: bash scripts/hook-run.sh mise exec -- task hook:commit
 pre-push:
   parallel: false
   commands:
     gates:
-      run: mise exec -- task check
+      run: bash scripts/hook-run.sh mise exec -- task check
