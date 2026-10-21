@@ -90,17 +90,23 @@ def check_manifest(path: pathlib.Path) -> None:
             if data.get(section) or any(target.get(section) for target in data.get("target", {}).values()):
                 raise ValueError("verified must have zero dependencies, including target/dev/build dependencies")
     tables = [data, *data.get("target", {}).values(), data.get("workspace", {})]
-    for table in tables:
-        for section in ("dependencies", "dev-dependencies", "build-dependencies"):
-            for name, spec in table.get(section, {}).items():
-                if isinstance(spec, dict) and "git" in spec:
-                    if spec["git"] not in GIT_SOURCES or not re.fullmatch(r"[a-f0-9]{40}", spec.get("rev", "")):
-                        raise ValueError(f"unapproved git source or non-immutable revision: {name}")
-                    if "tag" in spec or "branch" in spec:
-                        raise ValueError(f"git source cannot specify tag/branch: {name}")
-                    notes = pathlib.Path("docs/dependencies.md")
-                    if not notes.is_file() or spec["rev"] not in notes.read_text():
-                        raise ValueError(f"git dependency needs an upstream-tracking note in docs/dependencies.md: {name}")
+    declarations = [
+        table.get(section, {})
+        for table in tables
+        for section in ("dependencies", "dev-dependencies", "build-dependencies")
+    ]
+    declarations.extend(data.get("patch", {}).values())
+    declarations.append(data.get("replace", {}))
+    for declaration in declarations:
+        for name, spec in declaration.items():
+            if isinstance(spec, dict) and "git" in spec:
+                if spec["git"] not in GIT_SOURCES or not re.fullmatch(r"[a-f0-9]{40}", spec.get("rev", "")):
+                    raise ValueError(f"unapproved git source or non-immutable revision: {name}")
+                if "tag" in spec or "branch" in spec:
+                    raise ValueError(f"git source cannot specify tag/branch: {name}")
+                notes = pathlib.Path("docs/dependencies.md")
+                if not notes.is_file() or spec["rev"] not in notes.read_text():
+                    raise ValueError(f"git dependency needs an upstream-tracking note in docs/dependencies.md: {name}")
 
 
 def check_workspace() -> None:

@@ -24,29 +24,39 @@ if [[ -L $log_dir ]]; then
 fi
 mkdir -p "$log_dir" || exit 2
 chmod 700 "$log_dir" || exit 2
-log=$(mktemp "$log_dir/run-XXXXXX") || exit 2
+active=$(mktemp "$log_dir/active-XXXXXX") || exit 2
+log=$log_dir/run-${active##*-}
+# Active logs remain outside retention until command output has been displayed.
 # No command line is recorded: credential flags and positional values stay private.
-"$@" >"$log" 2>&1
+"$@" >"$active" 2>&1
 status=$?
 if [[ ${TASK_OUTPUT_VERBOSE:-0} == 1 ]]; then
-	tail -n +1 "$log"
+	tail -n +1 "$active"
 elif ((status != 0)); then
-	printf '%s failed (exit %s); log: %s\n' "${1##*/}" "$status" "$log" >&2
-	tail -n 60 "$log" >&2
+	tail -n 60 "$active" >&2
 elif [[ -n $pattern ]]; then
-	grep -E -- "$pattern" "$log" || true
+	grep -E -- "$pattern" "$active" || true
 fi
-# Retain newest logs only; never follow symlinks or remove unrelated files.
-python3 - "$log_dir" "$retention" <<'PY'
+# Serialize publication/pruning; active logs can never be a cleanup candidate.
+python3 - "$log_dir" "$retention" "$active" "$log" <<'PY'
+import fcntl
 import pathlib
 import sys
 root = pathlib.Path(sys.argv[1])
-logs = sorted(
-    (p for p in root.glob("run-*") if p.is_file() and not p.is_symlink()),
-    key=lambda p: p.stat().st_mtime_ns,
-    reverse=True,
-)
-for path in logs[int(sys.argv[2]):]:
-    path.unlink()
+with (root / ".retention.lock").open("a") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    completed = pathlib.Path(sys.argv[4])
+    pathlib.Path(sys.argv[3]).rename(completed)
+    completed.touch()
+    logs = sorted(
+        (p for p in root.glob("run-*") if p.is_file() and not p.is_symlink()),
+        key=lambda p: p.stat().st_mtime_ns,
+        reverse=True,
+    )
+    for path in logs[int(sys.argv[2]):]:
+        path.unlink()
 PY
+if [[ ${TASK_OUTPUT_VERBOSE:-0} != 1 ]] && ((status != 0)); then
+	printf '%s failed (exit %s); log: %s\n' "${1##*/}" "$status" "$log" >&2
+fi
 exit "$status"

@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -63,6 +64,15 @@ class PolicyTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 policy.check_manifest(path)
 
+    def test_unused_git_overrides_are_checked(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "Cargo.toml"
+            for section, name in (("patch.crates-io", "unused"), ("replace", "unused:1.0.0")):
+                for selector in ('branch="main"', 'tag="v1"', 'rev="1234"'):
+                    path.write_text('[' + section + ']\n"' + name + '"={git="https://github.com/mongodb/kingfisher",' + selector + '}')
+                    with self.subTest(section=section, selector=selector), self.assertRaises(ValueError):
+                        policy.check_manifest(path)
+
     def test_staged_guard_checks_index_not_worktree(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -116,6 +126,30 @@ class QuietTests(unittest.TestCase):
             self.assertEqual(len(list((Path(root) / ".task-logs").glob("run-*"))), 1)
             result = self.run_quiet(root, "--", "true", TASK_OUTPUT_LOG_RETENTION="0")
             self.assertEqual(result.returncode, 2)
+
+    def test_concurrent_retention_preserves_active_failure_context(self):
+        with tempfile.TemporaryDirectory() as root:
+            env = {**os.environ, "TASK_OUTPUT_VERBOSE": "0", "TASK_OUTPUT_LOG_RETENTION": "1"}
+            command = ["bash", str(ROOT / "scripts/quiet-run.sh"), "--"]
+            slow = subprocess.Popen(command + ["bash", "-c", "echo slow-context; touch ready; while [[ ! -f release ]]; do sleep 0.01; done; exit 17"], cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            try:
+                deadline = time.monotonic() + 10
+                while not (Path(root) / "ready").exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue((Path(root) / "ready").exists())
+                fast = [subprocess.Popen(command + ["true"], cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True) for _ in range(4)]
+                for process in fast:
+                    out, err = process.communicate(timeout=10)
+                    self.assertEqual((process.returncode, out, err), (0, "", ""))
+                self.assertEqual(len(list((Path(root) / ".task-logs").glob("active-*"))), 1)
+            finally:
+                (Path(root) / "release").touch()
+                out, err = slow.communicate(timeout=10)
+            self.assertEqual(slow.returncode, 17)
+            self.assertIn("slow-context", err)
+            self.assertNotIn("No such file", err)
+            self.assertEqual(len(list((Path(root) / ".task-logs").glob("run-*"))), 1)
+            self.assertFalse(list((Path(root) / ".task-logs").glob("active-*")))
 
     def test_refuses_symlink_log_directory(self):
         with tempfile.TemporaryDirectory() as root:
@@ -189,6 +223,7 @@ class RulePathTests(unittest.TestCase):
             samples = {
                 "crates/core/src/config.rs": 'fn f() { std::env::var("KEY"); }',
                 "crates/core/src/other.rs": 'fn f() { std::env::var("KEY"); }',
+                "crates/archiver/src/delete.rs": 'fn delete(path: PathBuf) { unlink(path); }',
             }
             for name, content in samples.items():
                 path = root / name
@@ -197,7 +232,8 @@ class RulePathTests(unittest.TestCase):
             result = subprocess.run(["ast-grep", "scan", "--json=compact"], cwd=root, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             matches = json.loads(result.stdout)
-            self.assertEqual({match["file"] for match in matches}, {"crates/core/src/other.rs"})
+            self.assertEqual({match["file"] for match in matches}, {"crates/core/src/other.rs", "crates/archiver/src/delete.rs"})
+            self.assertEqual([match["ruleId"] for match in matches if match["file"].endswith("delete.rs")], ["delete-requires-token"])
 
 
 if __name__ == "__main__":

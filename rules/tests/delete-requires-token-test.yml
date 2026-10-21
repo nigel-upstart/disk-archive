@@ -1,5 +1,7 @@
 id: delete-requires-token
 valid:
   - "fn delete(path: PathBuf, token: &VerifiedUpload) { std::fs::remove_file(path); }"
+  - "fn delete(path: PathBuf, token: &VerifiedUpload) { unlink(path); }"
 invalid:
+  - "fn delete(path: PathBuf) { unlink(path); }"
   - "fn delete(path: PathBuf) { std::fs::remove_file(path); }"

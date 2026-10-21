@@ -7,7 +7,7 @@ files:
 rule:
   all:
     - kind: call_expression
-    - regex: 'remove_file\s*\('
+    - regex: '(remove_file|unlink)\s*\('
     - not:
         inside:
           kind: function_item
