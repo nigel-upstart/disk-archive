@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # Hash only public compiler/native inputs; never dump environment or credentials.
 set -euo pipefail
+# The first uncached Linux check exhausted disk during the second (coverage)
+# native build. Reclaim only the unused Android SDK on GitHub-hosted runners;
+# never touch repository artifacts, Rust/native prerequisites or self-hosted hosts.
+# Kept outside the key inputs: reclaiming unrelated disk changes no build flags.
+if [[ ${GITHUB_ACTIONS-} == true && ${RUNNER_ENVIRONMENT-} == github-hosted && ${RUNNER_OS-} == Linux && -d /usr/local/lib/android ]]; then
+	sudo -n rm -rf -- /usr/local/lib/android
+fi
 case ${1:?workspace or fuzz required} in
 workspace) compiler=(rustc) ;;
 fuzz) compiler=(rustc +nightly-2026-10-20) ;;
