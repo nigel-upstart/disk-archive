@@ -1,5 +1,17 @@
 //! Literal replacement reference semantics, not proof of detector completeness.
 
+#[cfg(verus_only)]
+use vstd::prelude::*;
+
+#[cfg(verus_only)]
+verus! {
+impl NeedleSet {
+    pub closed spec fn supplied(self, line: Seq<u8>) -> bool {
+        exists|i: int| 0 <= i < self.0@.len() && crate::bytes::contains(line, self.0@[i].0@)
+    }
+}
+}
+
 /// Borrowed finding text; supply both raw variants as separate entries.
 /// Deliberately does not implement Debug or serialization.
 pub struct FindingRaw<'a> {
@@ -15,6 +27,7 @@ pub struct NeedleError;
 
 /// Owned needles and replacement bytes, never loggable through Debug.
 /// The caller bounds total findings/bytes before constructing this set.
+#[cfg_attr(verus_only, verifier::verify)]
 pub struct NeedleSet(Vec<(Vec<u8>, Vec<u8>)>);
 
 impl Drop for NeedleSet {
@@ -169,10 +182,22 @@ impl NeedleSet {
 
     /// Whether any supplied literal needle remains.
     #[must_use]
+    // LINT-JUSTIFICATION: Verus proves this index remains below the owned needle count.
+    #[allow(clippy::indexing_slicing)]
+    #[cfg_attr(verus_only, verus_spec(r => ensures r == self.supplied(bytes@)))]
     pub fn occurs_in(&self, bytes: &[u8]) -> bool {
-        self.0
-            .iter()
-            .any(|(needle, _)| bytes.windows(needle.len()).any(|window| window == needle))
+        let mut i = 0_usize;
+        #[cfg_attr(verus_only, verus_spec(
+            invariant i <= self.0.len(), forall|j: int| 0 <= j < i ==> !crate::bytes::contains(bytes@, self.0@[j].0@),
+            decreases self.0.len() - i,
+        ))]
+        while i < self.0.len() {
+            if crate::bytes::contains_literal(bytes, &self.0[i].0) {
+                return true;
+            }
+            i += 1;
+        }
+        false
     }
 }
 
@@ -204,6 +229,7 @@ pub fn replace_all(line: &[u8], needles: &NeedleSet) -> (Vec<u8>, usize) {
 }
 
 /// Final per-line guard result; no Debug because output may contain unrelated secrets.
+#[cfg_attr(verus_only, verifier::verify)]
 pub struct GuardOutcome {
     /// Output containing none of the supplied literal needles.
     pub bytes: Vec<u8>,
@@ -214,10 +240,11 @@ pub struct GuardOutcome {
 /// Keep a safe line; otherwise emit a safe marker, or empty bytes if marker collides.
 /// Empty output is safe even for needles containing newline or marker text.
 #[must_use]
+#[cfg_attr(verus_only, verus_spec(r => ensures !needles.supplied(r.bytes@), r.dropped == needles.supplied(line@)))]
 pub fn guard_line(line: &[u8], needles: &NeedleSet) -> GuardOutcome {
     if !needles.occurs_in(line) {
         return GuardOutcome {
-            bytes: line.to_vec(),
+            bytes: crate::bytes::copy_bytes(line),
             dropped: false,
         };
     }
@@ -226,7 +253,7 @@ pub fn guard_line(line: &[u8], needles: &NeedleSet) -> GuardOutcome {
         bytes: if needles.occurs_in(marker) {
             Vec::new()
         } else {
-            marker.to_vec()
+            crate::bytes::copy_bytes(marker)
         },
         dropped: true,
     }

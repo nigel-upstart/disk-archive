@@ -24,8 +24,9 @@ Use Rust for the implementation and Verus for dependency-free synchronous kernel
 normal workspace uses B's stable pin; Verus independently pins Rust **1.99.1** for release
 **0.2026.10.18.7d82994**. No global rustup replacement or shell-profile changes are required.
 The isolated installer supports macOS arm64 and Linux x86_64 with pinned asset digests.
-The observed local feasibility run proves two small functions with zero errors, rejects a
-false postcondition, and compiles/tests the reference APIs with the Verus-pinned compiler.
+The initial feasibility run proved two small functions with zero errors. The production-source
+gate now verifies 51 obligations with zero errors, rejects seven executable semantic mutations,
+and compiles/tests the same APIs with the Verus-pinned ordinary Rust compiler.
 
 Proceed with Verus. Use Rust plus Kani only if actual production-kernel proof work establishes
 a concrete Verus limitation which cannot be addressed within the stated boundary. A broken
@@ -37,5 +38,6 @@ Rust ownership helps express non-cloneable capabilities, but cannot establish th
 HEAD or filesystem evidence is true. The toolchain split avoids forcing SDK dependencies through
 Verus. It costs an additional compiler cache and separate CI installation; upgrades require
 re-running positive and negative proof controls. A successful toy proof is a feasibility result,
-not formal verification of the archiver. The current reference implementation remains explicitly
-unproved until the next wave connects specifications and proofs to production-called functions.
+not formal verification of the archiver. Production-called annotated functions now have connected
+proofs; the [design inventory](../design.md#proof-inventory-and-exclusions) lists precise contracts
+and excludes unannotated helpers and I/O adapters from the proof claim.

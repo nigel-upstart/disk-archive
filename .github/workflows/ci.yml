@@ -31,11 +31,8 @@ jobs:
       - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
           version: 2026.10.15
-      - name: Install isolated Verus when its integration lands
-        run: |
-          if [[ -f scripts/verus-install.sh ]]; then
-            bash scripts/verus-install.sh
-          fi
+      - name: Install isolated Verus
+        run: bash scripts/verus-install.sh
       - run: task check
       - run: task ci:secrets
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -52,17 +49,6 @@ jobs:
         with:
           persist-credentials: false
       - name: Install separate proof toolchain
-        run: |
-          if [[ -f scripts/verus-install.sh ]]; then
-            bash scripts/verus-install.sh
-          elif [[ -d crates/verified ]]; then
-            echo 'Verified crate exists without its isolated installer' >&2
-            exit 1
-          else
-            echo 'Scaffolding only: no verified crate yet; this is not a proof result.'
-          fi
-      - name: Verify only the dependency-free kernel
-        run: |
-          if [[ -d crates/verified ]]; then
-            bash scripts/verus-verify.sh
-          fi
+        run: bash scripts/verus-install.sh
+      - name: Prove production kernels and reject semantic mutations
+        run: bash scripts/verus-verify.sh
