@@ -1,0 +1,56 @@
+name: Transfer manager upstream compatibility
+
+on:
+  schedule:
+    - cron: '17 6 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upstream:
+    # Informational only: never changes the admitted pin, patch, lockfile or feature policy.
+    continue-on-error: true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CARGO_BUILD_JOBS: '4'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned compiler
+        run: |
+          pin=$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')
+          rustup toolchain install "$pin" --profile minimal
+      - name: Compile adapter against current upstream in disposable scratch workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          revision=$(git ls-remote https://github.com/awslabs/aws-s3-transfer-manager-rs refs/heads/main | cut -f1)
+          [[ $revision =~ ^[a-f0-9]{40}$ ]]
+          export PREVIEW_REVISION=$revision
+          export PREVIEW_SCRATCH
+          PREVIEW_SCRATCH=$(mktemp -d)
+          trap 'rm -rf "$PREVIEW_SCRATCH"' EXIT
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import re
+          import shutil
+          root = Path(os.environ['PREVIEW_SCRATCH'])
+          for crate in ('storage', 'verified'):
+              shutil.copytree(Path('crates') / crate, root / 'crates' / crate)
+          manifest = Path('Cargo.toml').read_text()
+          manifest = re.sub(r'^\[patch\.(?:"https://github.com/awslabs/aws-s3-transfer-manager-rs"|crates-io)\]\n.*?(?=^\[|\Z)', '', manifest, flags=re.MULTILINE | re.DOTALL)
+          (root / 'Cargo.toml').write_text(manifest)
+          shutil.copyfile('rust-toolchain.toml', root / 'rust-toolchain.toml')
+          path = root / 'crates/storage/Cargo.toml'
+          text = re.sub(r'rev = "[a-f0-9]{40}"', 'rev = "' + os.environ['PREVIEW_REVISION'] + '"', path.read_text())
+          path.write_text(text)
+          PY
+          printf 'Informational upstream revision: %s\n' "$revision"
+          # Compile only, no tests/providers/live requests. Upstream defaults may differ;
+          # this job does NOT waive the production credentials-process/source gates.
+          cargo check --manifest-path "$PREVIEW_SCRATCH/Cargo.toml" -p disk-archive-storage

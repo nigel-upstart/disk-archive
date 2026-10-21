@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import re
@@ -14,6 +15,16 @@ GIT_SOURCES = {
     "https://github.com/mongodb/kingfisher",
 }
 MAX_FILE_BYTES = 1024 * 1024
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+TM_SOURCE = "https://github.com/awslabs/aws-s3-transfer-manager-rs"
+TM_REVISION = "dc391970cd36e0d6d6ed044dcb3351b26131e9be"
+TM_RECEIPT_SHA256 = "6f80f3b928a2d909c8c2b012920c141961bece253f8449b99e65625d50d21a00"
+DNS_RECEIPT_SHA256 = "2d33d7d4d75a74834fc1fca952481fffffbe50f81dd955ec3f5ef9295322e219"
+DNS_PATCHES = {"aws-smithy-dns": "vendor/aws-smithy-dns"}
+TM_PATCHES = {
+    "aws-sdk-s3-transfer-manager": "vendor/transfer-manager/aws-sdk-s3-transfer-manager",
+    "s3-mock-server": "vendor/transfer-manager/s3-mock-server",
+}
 
 
 def git(*args: str) -> bytes:
@@ -83,6 +94,15 @@ def check_files(staged: bool) -> None:
 
 def check_manifest(path: pathlib.Path) -> None:
     data = tomllib.loads(path.read_text())
+    # Do not turn a single audited upstream manifest fix into a general path escape.
+    for source, declaration in data.get("patch", {}).items():
+        for name, spec in declaration.items():
+            if isinstance(spec, dict) and "path" in spec:
+                allowed = {TM_SOURCE: TM_PATCHES, "crates-io": DNS_PATCHES}.get(source, {})
+                if path.resolve() != ROOT / "Cargo.toml" or name not in allowed or spec != {"path": allowed[name]}:
+                    raise ValueError("unapproved path patch; only exact audited transfer-manager/DNS patches are allowed")
+    if any(isinstance(spec, dict) and "path" in spec for spec in data.get("replace", {}).values()):
+        raise ValueError("path replacements are not approved")
     if "package" in data and data.get("lints", {}).get("workspace") is not True:
         raise ValueError(f"workspace packages must inherit strict lints: {path}")
     if path.parent.name == "verified":
@@ -109,7 +129,72 @@ def check_manifest(path: pathlib.Path) -> None:
                     raise ValueError(f"git dependency needs an upstream-tracking note in docs/dependencies.md: {name}")
 
 
+def check_dns_vendor(root: pathlib.Path) -> None:
+    """Pin the registry archive identity and every byte of the reviewed compatibility patch."""
+    vendor = root / "vendor/aws-smithy-dns"
+    receipt_bytes = (vendor / "provenance.json").read_bytes()
+    if hashlib.sha256(receipt_bytes).hexdigest() != DNS_RECEIPT_SHA256:
+        raise ValueError("DNS admission receipt changed; requires a reviewed pin/policy update")
+    receipt = json.loads(receipt_bytes)
+    files = receipt["source_files"]
+    originals = {"Cargo.toml": "UPSTREAM-Cargo.toml", "src/hickory.rs": "UPSTREAM-hickory.rs"}
+    expected_paths = set(files) | set(originals.values()) | {"provenance.json", "compatibility.patch"}
+    actual_paths = set()
+    for path in vendor.rglob("*"):
+        if path.is_symlink() or not (path.is_dir() or path.is_file()):
+            raise ValueError("DNS vendor tree must contain only regular files/directories")
+        if path.is_file():
+            actual_paths.add(path.relative_to(vendor).as_posix())
+    if actual_paths != expected_paths:
+        raise ValueError("unexpected/missing DNS vendor file")
+    for name, digest in files.items():
+        original = vendor / originals.get(name, name)
+        if hashlib.sha256(original.read_bytes()).hexdigest() != digest:
+            raise ValueError(f"DNS upstream source changed: {name}")
+        expected = receipt["patched_files"].get(name, digest)
+        if hashlib.sha256((vendor / name).read_bytes()).hexdigest() != expected:
+            raise ValueError(f"unapproved DNS compatibility patch: {name}")
+    if hashlib.sha256((vendor / "compatibility.patch").read_bytes()).hexdigest() != receipt["patch_sha256"]:
+        raise ValueError("DNS compatibility patch receipt mismatch")
+
+
+def check_vendor(root: pathlib.Path = ROOT) -> None:
+    """Verify exact upstream bytes and the only admitted manifest transformations."""
+    check_dns_vendor(root)
+    vendor = root / "vendor/transfer-manager"
+    receipt_bytes = (vendor / "provenance.json").read_bytes()
+    if hashlib.sha256(receipt_bytes).hexdigest() != TM_RECEIPT_SHA256:
+        raise ValueError("transfer-manager admission receipt changed; requires a reviewed pin/policy update")
+    receipt = json.loads(receipt_bytes)
+    if receipt["revision"] != TM_REVISION or receipt["upstream"] != TM_SOURCE:
+        raise ValueError("unexpected transfer-manager provenance")
+    files = receipt["source_files"]
+    expected_paths = set(files) | {"provenance.json", "UPSTREAM-Cargo.toml"}
+    actual_paths = set()
+    for path in vendor.rglob("*"):
+        if path.is_symlink() or not (path.is_dir() or path.is_file()):
+            raise ValueError("vendor tree must contain only regular files/directories")
+        if path.is_file():
+            actual_paths.add(path.relative_to(vendor).as_posix())
+    if actual_paths != expected_paths:
+        raise ValueError("unexpected/missing transfer-manager vendor file")
+    original = (vendor / "UPSTREAM-Cargo.toml").read_bytes()
+    if hashlib.sha256(original).hexdigest() != files["Cargo.toml"]:
+        raise ValueError("upstream workspace manifest provenance mismatch")
+    patched = original.decode().replace('    "benches",\n', '').replace('    "integration-tests"\n', '')
+    patched = patched.replace('aws-config = "1.12.0"', 'aws-config = { version = "1.12.0", default-features = false, features = ["default-https-client", "rt-tokio", "sso"] }')
+    if (vendor / "Cargo.toml").read_bytes() != patched.encode():
+        raise ValueError("unapproved transfer-manager manifest patch")
+    if hashlib.sha256(patched.encode()).hexdigest() != receipt["patched_workspace_sha256"]:
+        raise ValueError("patched workspace receipt mismatch")
+    for name, digest in files.items():
+        if name != "Cargo.toml" and hashlib.sha256((vendor / name).read_bytes()).hexdigest() != digest:
+            raise ValueError(f"upstream source changed: {name}")
+
+
 def check_workspace() -> None:
+    if (ROOT / "vendor/transfer-manager").exists():
+        check_vendor()
     for path in [pathlib.Path("Cargo.toml"), *pathlib.Path("crates").glob("*/Cargo.toml")]:
         check_manifest(path)
     metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--format-version", "1", "--locked", "--all-features"]))
@@ -150,6 +235,8 @@ def main() -> None:
         check_files(mode == "staged")
     elif mode == "workspace":
         check_workspace()
+    elif mode == "vendor":
+        check_vendor()
     elif mode == "toolchain":
         check_toolchain()
     else:

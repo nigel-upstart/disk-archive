@@ -31,6 +31,8 @@ pub struct Config {
     pub aws_profile: Option<String>,
     /// Optional region; None means standard SDK provider selection.
     pub region: Option<String>,
+    /// Optional extra TLS trust roots; app setting wins over the standard AWS fallback.
+    pub ca_bundle: Option<PathBuf>,
     /// Explicit all-files source roots; no personal root defaults.
     pub roots_all_files: Vec<PathBuf>,
     /// Explicit recursive JSONL source roots.
@@ -49,7 +51,7 @@ pub struct Config {
 pub struct Environment(BTreeMap<OsString, OsString>);
 
 impl Environment {
-    /// Snapshot app settings and XDG path only, not AWS credentials or unrelated variables.
+    /// Snapshot app settings, XDG path and AWS CA bundle only, never AWS credentials.
     #[must_use]
     pub fn capture() -> Self {
         Self::from_pairs(std::env::vars_os())
@@ -62,7 +64,10 @@ impl Environment {
             pairs
                 .into_iter()
                 .filter(|(k, _)| {
-                    k == "XDG_CONFIG_HOME" || k.to_string_lossy().starts_with("DISK_ARCHIVE_")
+                    k == "XDG_CONFIG_HOME"
+                        || k == "AWS_CA_BUNDLE"
+                        || k.to_string_lossy().starts_with("AWS_ENDPOINT_URL")
+                        || k.to_string_lossy().starts_with("DISK_ARCHIVE_")
                 })
                 .collect(),
         )
@@ -84,6 +89,13 @@ impl Config {
         if !cwd.is_absolute() {
             return Err(ConfigError::Setting);
         }
+        if environment
+            .0
+            .keys()
+            .any(|key| key.to_string_lossy().starts_with("AWS_ENDPOINT_URL"))
+        {
+            return Err(ConfigError::Setting);
+        }
         let selected = select_file(explicit, cwd, environment)?;
         let mut values = selected.map_or_else(|| Ok(BTreeMap::new()), |p| read_env(&p))?;
         for (key, value) in &environment.0 {
@@ -92,6 +104,12 @@ impl Config {
                 let value = value.to_str().ok_or(ConfigError::Setting)?;
                 values.insert(key.to_owned(), value.to_owned());
             }
+        }
+        if !values.contains_key("DISK_ARCHIVE_CA_BUNDLE")
+            && let Some(bundle) = environment.0.get(&OsString::from("AWS_CA_BUNDLE"))
+        {
+            let bundle = bundle.to_str().ok_or(ConfigError::Setting)?;
+            values.insert("DISK_ARCHIVE_CA_BUNDLE".into(), bundle.into());
         }
         Self::from_values(&values, cwd)
     }
@@ -102,6 +120,7 @@ impl Config {
             "PREFIX",
             "AWS_PROFILE",
             "REGION",
+            "CA_BUNDLE",
             "ROOTS_ALL_FILES",
             "ROOTS_JSONL",
             "WORK_DIR",
@@ -141,6 +160,9 @@ impl Config {
             prefix,
             aws_profile: settings.optional("AWS_PROFILE")?,
             region: settings.optional("REGION")?,
+            ca_bundle: settings
+                .optional("CA_BUNDLE")?
+                .map(|v| resolve(cwd, Path::new(&v))),
             roots_all_files: settings.roots("ROOTS_ALL_FILES", cwd)?,
             roots_jsonl: settings.roots("ROOTS_JSONL", cwd)?,
             work_dir: settings

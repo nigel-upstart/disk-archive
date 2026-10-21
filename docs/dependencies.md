@@ -13,13 +13,37 @@ not automatically trustworthy: review upstream changes and advisories before upg
 
 | Dependency | Upstream | Revision | Scope |
 | --- | --- | --- | --- |
+| AWS S3 transfer manager + synthetic mock | https://github.com/awslabs/aws-s3-transfer-manager-rs | `dc391970cd36e0d6d6ed044dcb3351b26131e9be` | Preview 0.3.1; Apache-2.0; manifest-only audited local patch |
 | Kingfisher scanner/core/rules | https://github.com/mongodb/kingfisher | `c0a65103432434b2e4f502d519ed25566faa282e` | Standalone feasibility only; scanner 2.0.0, core 1.0.4, rules 2.0.0; no validator features |
 
 The spike locks registry transitive packages, including published Vectorscan/sys 0.1.1. Kingfisher
 scanner/core use Apache-2.0; rules declare Apache-2.0 AND MIT. Audit the full graph and embedded
 catalog notices before production adoption. Changes to detection catalogs require planted/benign
-corpus comparison, not only compilation. The transfer manager will receive its own immutable
-revision entry when the S3 adapter introduces it; no moving revision is preapproved.
+corpus comparison, not only compilation. The transfer manager revision above is admitted only with the exact root path patches and
+source-hash receipt in `vendor/transfer-manager/provenance.json`. Its original source, license and
+notice are retained; no Rust source is modified. The workspace manifest removes omitted auxiliary
+members and disables aws-config defaults while retaining HTTPS, Tokio and SSO. The resolved graph
+still forbids credentials-process; this patch is not a general override escape.
+
+Review the preview pin monthly: inspect upstream source changes and advisories, regenerate and
+review the source receipt, recheck features/licenses/duplicate APIs, run HTTP/checksum/abort/TLS
+regressions and full checks. Do not replace immutable revisions with moving main. A non-blocking
+upstream compatibility workflow must remain separate from production admission; its output is
+not permission to update the admitted source automatically.
+
+The preview graph's `aws-smithy-dns 0.2.3` otherwise selects vulnerable Hickory 0.25.
+The approved minimal registry-source patch upgrades to Hickory 0.26.3 (the patched 0.26 line,
+including the approved 0.26.1 security fix) and adapts only runtime-provider, nameserver,
+cache-size and fallible-builder APIs. No advisory is ignored. The published archive identity
+is SHA-256 `3aec766384ece7e3e9ac462683a81a0c3803a1169900e071355d33c194d71fab`;
+`vendor/aws-smithy-dns/provenance.json` records original and patched hashes, and
+`compatibility.patch` records every change. Original manifests/source and Apache-2.0 license
+are retained. Policy pins the receipt and exact path override; it rejects source, patch,
+receipt, extra-file and symlink changes. Upgrade tracking belongs to issue 5: check monthly
+for an upstream Smithy release supporting patched Hickory and remove this patch when available.
+Exact duplicate-API and foldhash-Zlib allowances in deny.toml expire 2026-11-21; these are
+not vulnerability waivers. The macOS-only core-foundation duplicate is required by Hickory's
+system-configuration DNS integration versus rustls-native-certs' security-framework ABI.
 
 ## Separate compiler and verifier pins
 
