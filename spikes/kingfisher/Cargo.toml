@@ -1,0 +1,14 @@
+[package]
+name = "disk-archive-kingfisher-spike"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+publish = false
+license = "MIT"
+
+[workspace]
+
+[dependencies]
+kingfisher-scanner = { git = "https://github.com/mongodb/kingfisher", rev = "c0a65103432434b2e4f502d519ed25566faa282e", default-features = false }
+# Feature unification forces the published native crate to build its vendored C++ source.
+kingfisher-vectorscan = { version = "=0.1.1", features = ["build-from-source"] }
