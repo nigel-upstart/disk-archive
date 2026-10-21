@@ -373,6 +373,11 @@ impl Scanner {
             let first = (*end).max(state.frontier);
             let mut at = usize::try_from(first.saturating_sub(window.base))
                 .map_err(|_| ScanError::Budget)?;
+            // Full captures are nonoverlapping, so secret starts are monotone.
+            // Count each window byte at most once per selected rule rather than
+            // rescanning its prefix for every finding in a dense input.
+            let mut line_cursor = 0;
+            let mut finding_line = window.line;
             while let Some(captures) = regex.captures_at(bytes, at) {
                 let full = captures.get(0).ok_or(ScanError::Engine)?;
                 if full.start() as u64 + window.base >= frontier {
@@ -403,17 +408,19 @@ impl Scanner {
                 }
                 let preceding_lines = memchr::memchr_iter(
                     b'\n',
-                    bytes.get(..secret.start()).ok_or(ScanError::Engine)?,
+                    bytes
+                        .get(line_cursor..secret.start())
+                        .ok_or(ScanError::Engine)?,
                 )
                 .count() as u64;
-                let line = window
-                    .line
+                finding_line = finding_line
                     .checked_add(preceding_lines)
                     .ok_or(ScanError::Budget)?;
+                line_cursor = secret.start();
                 consume(Finding {
                     rule_id: rule.id(),
                     redaction_label: self.labels.get(index).ok_or(ScanError::Engine)?,
-                    line,
+                    line: finding_line,
                     byte_range: (window.base + secret.start() as u64)
                         ..(window.base + secret.end() as u64),
                     raw,
