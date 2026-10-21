@@ -223,6 +223,46 @@ fn eof_anchored_oversize_match_fails_at_close() -> Result<(), Box<dyn std::error
     Ok(())
 }
 
+#[test]
+fn short_reads_and_interrupts_preserve_findings() -> Result<(), Box<dyn std::error::Error>> {
+    struct ShortReader<'a> {
+        input: &'a [u8],
+        interrupted: bool,
+    }
+    impl Read for ShortReader<'_> {
+        fn read(&mut self, target: &mut [u8]) -> io::Result<usize> {
+            self.interrupted = !self.interrupted;
+            if self.interrupted {
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            let length = target.len().min(3);
+            self.input.read(
+                target
+                    .get_mut(..length)
+                    .ok_or(io::ErrorKind::InvalidInput)?,
+            )
+        }
+    }
+    let scanner = scanner(r"(?P<TOKEN>demo_[a-z0-9]{16})", 31)?;
+    let mut input = b"ordinary\n".repeat(100);
+    let start = input.len() as u64;
+    input.extend_from_slice(b"demo_abcd1234efgh5678\n");
+    let summary = scanner.scan(
+        ShortReader {
+            input: &input,
+            interrupted: false,
+        },
+        |finding| {
+            assert_eq!(finding.byte_range(), start..start + 21);
+            assert_eq!(finding.line(), 101);
+            Ok(())
+        },
+    )?;
+    assert_eq!(summary.findings, 1);
+    assert_eq!(summary.bytes, input.len() as u64);
+    Ok(())
+}
+
 struct FailingReader;
 impl Read for FailingReader {
     fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {

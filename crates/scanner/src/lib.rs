@@ -275,15 +275,23 @@ impl Scanner {
                 .bytes
                 .get_mut(old_len..old_len + self.limits.chunk_bytes)
                 .ok_or(ScanError::Budget)?;
-            let read = loop {
-                match reader.read(target) {
+            // Read is allowed to return short chunks. Accumulate up to the
+            // configured bound so tiny readers do not rescan a 1 MiB window on
+            // every byte. Callbacks still finish before reading the next chunk.
+            let mut read = 0;
+            let mut eof = false;
+            while read < target.len() {
+                let rest = target.get_mut(read..).ok_or(ScanError::Budget)?;
+                match reader.read(rest) {
                     Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
                     Err(_) => return Err(ScanError::Read),
-                    Ok(size) => break size,
+                    Ok(0) => {
+                        eof = true;
+                        break;
+                    }
+                    Ok(size) if size > rest.len() => return Err(ScanError::Read),
+                    Ok(size) => read += size,
                 }
-            };
-            if read > target.len() {
-                return Err(ScanError::Read);
             }
             window.used += read;
             let new_bytes = window
@@ -291,7 +299,6 @@ impl Scanner {
                 .get(old_len..window.used)
                 .ok_or(ScanError::Budget)?;
             state.advance(new_bytes, self.limits)?;
-            let eof = read == 0;
             if let Some(stream) = guard_stream.as_mut() {
                 stream.advance(new_bytes)?;
             }

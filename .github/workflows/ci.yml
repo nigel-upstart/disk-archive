@@ -36,6 +36,26 @@ jobs:
           version: 2026.10.15
       - name: Install isolated Verus
         run: bash scripts/verus-install.sh
+      - name: Fingerprint workspace/native compiler inputs
+        id: workspace-native
+        run: bash scripts/ci-cache-key.sh workspace
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          key: native-v1-${{ runner.os }}-${{ runner.arch }}-workspace-debug-coverage-${{ github.ref }}-${{ steps.workspace-native.outputs.digest }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', 'mise.toml', 'crates/scanner/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', '.github/workflows/ci.yml') }}
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target/debug/.fingerprint
+            target/debug/build
+            target/debug/deps
+            target/llvm-cov-target/debug/.fingerprint
+            target/llvm-cov-target/debug/build
+            target/llvm-cov-target/debug/deps
+            !**/*.log
+            !**/build/**/output
+            !**/build/**/stderr
       - run: task check
       - run: task ci:secrets
       - name: Audit planted native scanner with network denied
@@ -63,6 +83,26 @@ jobs:
           sudo apt-get update && sudo apt-get install -y build-essential cmake libboost-dev ragel pkg-config
           rustup toolchain install nightly-2026-10-20 --profile minimal --component rust-src
           cargo install cargo-fuzz --version 0.13.2 --locked
+      - name: Fingerprint separate nightly/ASan compiler inputs
+        id: fuzz-native
+        run: bash scripts/ci-cache-key.sh fuzz
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          key: native-v1-${{ runner.os }}-${{ runner.arch }}-nightly-2026-10-20-release-asan-${{ github.ref }}-${{ steps.fuzz-native.outputs.digest }}-${{ hashFiles('fuzz/Cargo.lock', 'fuzz/Cargo.toml', 'Cargo.toml', 'crates/scanner/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', '.github/workflows/ci.yml') }}
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            fuzz/target/release/.fingerprint
+            fuzz/target/release/build
+            fuzz/target/release/deps
+            fuzz/target/x86_64-unknown-linux-gnu/release/.fingerprint
+            fuzz/target/x86_64-unknown-linux-gnu/release/build
+            fuzz/target/x86_64-unknown-linux-gnu/release/deps
+            !**/*.log
+            !**/build/**/output
+            !**/build/**/stderr
       - name: Build isolated fuzz target (no input or findings loaded)
         run: |
           cargo +nightly-2026-10-20 fetch --locked --manifest-path fuzz/Cargo.toml

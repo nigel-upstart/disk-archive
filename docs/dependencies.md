@@ -77,6 +77,23 @@ exception requires it. Detection-only Kingfisher rules already depend on AWS-LC.
 features when integrating: validation, credential subprocess providers, unsolicited network
 behavior and duplicated crypto providers must not arrive through transitive defaults.
 
+## CI build-artifact reuse
+
+CI uses actions/cache v6.1.0 at
+55cc8345863c7cc4c66a329aec7e433d2d1c52a9 (upstream release checked with gh).
+Exact keys include OS/architecture, ref, compiler/native-tool/CPU fingerprint,
+workspace or nightly-ASan profile, lockfile, toolchain/manifest and native build
+inputs. No broad restore prefix crosses dependency/toolchain changes. Fork PRs
+neither restore nor save; feature, PR merge and main refs are isolated.
+
+Only registry archives/index, public dependency git databases and selected
+compiled dependency/native directories are cached. Runtime fixture/log/trace/
+SBOM/credential directories and generated fuzz corpora are excluded; build log
+files are excluded too. Nightly fuzz artifacts use a separate key and paths.
+Every hit still runs unchanged gates. A hit is reuse evidence, not a fresh build
+or runtime-performance measurement; retain the first uncached CI result as cold
+build proof. This saves native rebuild time, not scanner runtime.
+
 ## Required production admission evidence
 
 Run cargo-deny, unused-dependency checks, the immutable-git policy and feature-graph checks.
