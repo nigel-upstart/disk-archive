@@ -1,6 +1,6 @@
 # Kingfisher native embedding feasibility
 
-**Owner:** Maintainers · **Status:** Source build in progress; production integration pending
+**Owner:** Maintainers · **Status:** Native/API feasibility passed; production integration pending
 **Last updated:** 2026-10-21 · **Links:** [selection ADR](../../docs/adr/005-scanner.md),
 [dependency policy](../../docs/dependencies.md)
 
@@ -34,6 +34,9 @@ acceptance gates; the vector-returning high-level API here does not satisfy them
 ## Evidence
 
 Local host: macOS arm64, Rust 1.99.0, Apple Clang 21, CMake 4.4.4, Boost 1.92.0, Ragel 6.11.
-Native C++ compilation has started successfully with four jobs. Final runtime/catalog result
-will be recorded when the source build completes; this checkpoint does not claim a passing run.
-No library fallback has been selected. See the ADR for the remaining API integration gaps.
+Native C++ plus Rust compilation completed successfully in 22m07s with four jobs. The runtime
+then passed synthetic custom-rule, repeated-scan and benign checks, and compiled **488 embedded
+catalog rules**. Final output: `native/API spike passed; compiled 488 catalog rules; no finding
+values printed`. Debug native catalog compilation took several additional minutes; this is
+feasibility evidence, not a startup/performance baseline. No library fallback has been selected.
+See the ADR for the remaining API integration gaps.

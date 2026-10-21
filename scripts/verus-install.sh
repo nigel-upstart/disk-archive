@@ -6,6 +6,8 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=/dev/null
 source "$root/tools/verus.env"
 tools="${DISK_ARCHIVE_TOOLS_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/disk-archive/tools}"
+# Resolve relative overrides before verification changes into its temporary directory.
+[[ "$tools" = /* ]] || tools="$PWD/$tools"
 case "$(uname -s)/$(uname -m)" in
 Darwin/arm64)
 	platform=arm64-macos
@@ -46,11 +48,16 @@ fetch() {
 		mv "$destination.part" "$destination"
 	fi
 }
-fetch "https://static.rust-lang.org/rustup/archive/$RUSTUP_VERSION/$triple/rustup-init" \
-	"$tools/downloads/rustup-init-$triple" "$rustup_sha"
-chmod +x "$tools/downloads/rustup-init-$triple"
 if [[ ! -x "$CARGO_HOME/bin/rustup" ]]; then
+	fetch "https://static.rust-lang.org/rustup/archive/$RUSTUP_VERSION/$triple/rustup-init" \
+		"$tools/downloads/rustup-init-$triple" "$rustup_sha"
+	chmod +x "$tools/downloads/rustup-init-$triple"
 	"$tools/downloads/rustup-init-$triple" -y --no-modify-path --default-toolchain none
+fi
+installed="$("$CARGO_HOME/bin/rustup" --version)"
+if [[ "$installed" != "rustup $RUSTUP_VERSION ("* ]]; then
+	echo "Dedicated rustup version mismatch; reinstall pinned $RUSTUP_VERSION in $CARGO_HOME" >&2
+	exit 1
 fi
 export PATH="$CARGO_HOME/bin:$PATH"
 rustup toolchain install "$VERUS_RUST_VERSION" --profile minimal --no-self-update
