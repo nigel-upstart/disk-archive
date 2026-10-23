@@ -1,6 +1,6 @@
 # Dependency and toolchain policy
 
-**Owner:** Maintainers · **Status:** Active · **Last updated:** 2026-10-21
+**Owner:** Maintainers · **Status:** Active · **Last updated:** 2026-10-23
 **Links:** [crypto/native ADR](adr/006-crypto-provider.md), [scanner ADR](adr/005-scanner.md)
 
 Prefer registry dependencies with a committed lockfile. Git dependencies require a full immutable
@@ -88,6 +88,19 @@ loadable extensions and the default alternate backends are not enabled. One boun
 blocking writer owns the connection. Re-run license/advisory/feature checks,
 SQLite durability/resume regressions and every workspace SBOM on upgrades. No new
 advisory, license or duplicate-version exception is introduced for this layer.
+
+## October 2026 security patch floor
+
+The archiver and storage require Tokio >=1.54.1 and the workspace lockfile pins
+1.54.1: [RUSTSEC-2026-0384](https://rustsec.org/advisories/RUSTSEC-2026-0384)
+affects 1.54.0's multi-threaded Interval timer with a data race/use-after-free.
+Both workspace and isolated fuzz lockfiles pin ctutils 0.4.4 for
+[RUSTSEC-2026-0385](https://rustsec.org/advisories/RUSTSEC-2026-0385), which fixes
+non-constant-time masks and u128 comparisons. The patched, non-yanked registry
+releases and advisory ranges were checked on 2026-10-23. These are precise
+security updates only; all other registry, immutable Git and vendor identities
+are retained, with no advisory exception. Keep both graphs on patched versions
+and rerun admission, runtime regressions and full gates on future upgrades.
 
 ## Separate compiler and verifier pins
 
