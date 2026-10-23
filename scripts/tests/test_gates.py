@@ -174,6 +174,48 @@ class CacheKeyTests(unittest.TestCase):
                 self.assertIn("CMakeLists.txt", line)
                 self.assertIn("crates/scanner/Cargo.toml", line)
 
+    def test_sdk_reclamation_is_hosted_linux_only_and_has_fixed_roots(self):
+        script = (ROOT / "scripts/ci-cache-key.sh").read_text()
+        reclaim, separator, _ = script.partition("case ${1:?workspace or fuzz required} in")
+        self.assertTrue(separator)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binary = root / "bin"
+            binary.mkdir()
+            calls = root / "sudo-args"
+            sudo = binary / "sudo"
+            sudo.write_text("#!/bin/sh\nprintf '%s\\n' CALL \"$@\" >> \"$MOCK_SUDO_ARGS\"\n")
+            sudo.chmod(0o700)
+            names = ("GITHUB_ACTIONS", "RUNNER_ENVIRONMENT", "RUNNER_OS")
+            environment = {key: value for key, value in os.environ.items() if key not in names}
+            environment.update(PATH=str(binary) + os.pathsep + os.environ["PATH"],
+                               MOCK_SUDO_ARGS=str(calls))
+            hosted = dict(zip(names, ("true", "github-hosted", "Linux")))
+            invalid = [{}]
+            for name, values in [("GITHUB_ACTIONS", (None, "false", "1")),
+                                 ("RUNNER_ENVIRONMENT", (None, "self-hosted")),
+                                 ("RUNNER_OS", (None, "macOS", "Windows"))]:
+                for value in values:
+                    case = hosted.copy()
+                    if value is None:
+                        del case[name]
+                    else:
+                        case[name] = value
+                    invalid.append(case)
+            for case in invalid:
+                with self.subTest(environment=case):
+                    calls.unlink(missing_ok=True)
+                    subprocess.run(["bash", "-c", reclaim], env={**environment, **case},
+                                   cwd=root, check=True)
+                    self.assertFalse(calls.exists())
+            subprocess.run(["bash", "-c", reclaim], env={**environment, **hosted},
+                           cwd=root, check=True)
+            self.assertTrue(calls.exists())
+            self.assertEqual(calls.read_text().splitlines(), [
+                "CALL", "-n", "rm", "-rf", "--", "/usr/local/lib/android",
+                "/usr/share/dotnet", "/usr/local/.ghcup",
+            ])
+
     def test_dynamic_cpu_fields_do_not_break_safe_cache_reuse(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
