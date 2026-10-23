@@ -402,6 +402,12 @@ fn cli_is_strict_and_zero_limit_is_inert() -> Result<(), Error> {
     assert!(args.dry_run);
     assert_eq!(args.limit, Some(0));
     assert_eq!(args.workers, Some(2));
+    let literal = Arguments::parse(
+        ["--env-file", "./--dry-run", "--dry-run", "--quiescent"].map(OsString::from),
+    )?;
+    assert_eq!(literal.env_file, Some("./--dry-run".into()));
+    assert!(literal.dry_run);
+    assert!(literal.quiescent);
     for args in [
         vec!["--workers", "0"],
         vec!["--limit", "-1"],
@@ -409,6 +415,18 @@ fn cli_is_strict_and_zero_limit_is_inert() -> Result<(), Error> {
         vec!["--unknown"],
         vec!["--dry-run", "--dry-run"],
         vec!["--help", "-h"],
+        vec!["--env-file"],
+        vec!["--env-file", ""],
+        vec!["--env-file", "--dry-run"],
+        vec!["--env-file", "--quiescent"],
+        vec!["--env-file", "--help"],
+        vec!["--env-file", "-h"],
+        vec!["--env-file", "--env-file"],
+        vec!["--env-file", "--limit"],
+        vec!["--env-file", "--workers"],
+        vec!["--env-file", "--queue-capacity"],
+        vec!["--env-file", "--blocking-threads"],
+        vec!["--env-file", "--unknown"],
     ] {
         assert!(Arguments::parse(args.into_iter().map(OsString::from)).is_err());
     }

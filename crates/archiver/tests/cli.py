@@ -100,6 +100,33 @@ class CliTests(unittest.TestCase):
             with self.subTest(args=args):
                 self.assert_static_failure(self.run_cli(*args))
 
+    def test_env_file_does_not_consume_options_as_paths(self):
+        for option in ["--dry-run", "--quiescent", "--help", "-h", "--env-file",
+                       "--limit", "--workers", "--queue-capacity", "--blocking-threads",
+                       "--unknown"]:
+            with self.subTest(option=option):
+                (self.base / option).write_text("# synthetic dotenv\n")
+                # Help keeps the old parser safely away from mutable setup while
+                # exposing its acceptance of the preceding option as a filename.
+                self.assert_static_failure(self.run_cli("--env-file", option, "--help"))
+        for args in [("--env-file",), ("--env-file", ""),
+                     ("--dry-run", "--env-file")]:
+            with self.subTest(args=args):
+                self.assert_static_failure(self.run_cli(*args))
+
+    def test_explicit_option_like_env_path_preserves_dry_run(self):
+        (self.base / "--dry-run").write_text("# synthetic dotenv\n")
+        before = self.source.stat()
+        result = self.run_cli("--env-file", "./--dry-run", "--dry-run", "--limit", "0")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "eligible=0 retained=0 redaction=unknown verification=unknown\n")
+        self.assertEqual(result.stderr, "")
+        after = self.source.stat()
+        self.assertEqual((before.st_atime_ns, before.st_mtime_ns, before.st_ctime_ns),
+                         (after.st_atime_ns, after.st_mtime_ns, after.st_ctime_ns))
+        self.assertFalse(self.work.exists())
+        self.assertEqual(set(self.root.iterdir()), {self.source})
+
     def test_help_does_not_load_configuration(self):
         self.env = {"PATH": os.defpath, "HOME": str(self.base)}
         result = self.run_cli("--help", "--env-file", str(self.base / "missing"))

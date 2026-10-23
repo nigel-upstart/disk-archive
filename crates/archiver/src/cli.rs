@@ -49,7 +49,8 @@ impl Arguments {
                 "--help" => result.help = true,
                 "--env-file" => {
                     let value = args.next().ok_or(Error::Configuration)?;
-                    if value.is_empty() {
+                    // Option-like filenames must be explicit paths (for example ./--dry-run).
+                    if value.is_empty() || value.as_encoded_bytes().starts_with(b"-") {
                         return Err(Error::Configuration);
                     }
                     result.env_file = Some(value.into());
