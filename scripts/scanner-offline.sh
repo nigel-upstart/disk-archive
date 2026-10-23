@@ -2,13 +2,18 @@
 # Synthetic planted catalog only. Never point this test at runtime logs/state.
 set -euo pipefail
 mkdir -p target
-cargo test -p disk-archive-scanner --test catalog --locked --no-run --message-format json >target/scanner-test-build.json
+# Match task check's feature resolution; narrow -p builds recompile native/SDK dependencies.
+cargo test --workspace --all-features --locked --no-run --message-format=json >target/scanner-test-build.json
 binary=$(
 	python3 - <<'PY'
 import json
 from pathlib import Path
 artifacts = [json.loads(line) for line in Path('target/scanner-test-build.json').read_text().splitlines()]
-paths = [item['executable'] for item in artifacts if item.get('reason') == 'compiler-artifact' and item.get('executable') and item.get('target', {}).get('name') == 'catalog']
+paths = [item['executable'] for item in artifacts
+         if item.get('reason') == 'compiler-artifact' and item.get('executable')
+         and item.get('target', {}).get('name') == 'catalog'
+         and item.get('target', {}).get('kind') == ['test']
+         and item.get('profile', {}).get('test') is True]
 if len(paths) != 1:
     raise SystemExit('expected one scanner catalog test binary')
 print(paths[0])
