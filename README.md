@@ -21,8 +21,6 @@ presence never exempts an encoded copy. NUL-bearing remainders stay one bounded
 carrier through EOF; UTF-16 expansion can exhaust its decoded-output budget near
 683 KiB, below the 1 MiB allocation ceiling. See [ADR 007](docs/adr/007-bounded-scanner.md).
 
-This repository must remain **private** until a full-history secret/configuration
-and author audit is complete and the owner explicitly approves publication.
 Never commit `.env`, runtime state, logs, archives, or actual session content.
 
 ## Configuration
