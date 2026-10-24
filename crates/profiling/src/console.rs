@@ -1,3 +1,6 @@
+mod observation;
+pub use observation::{ConsoleObservation, observe_console};
+
 use super::ProfileError;
 use tracing_subscriber::{Layer as _, layer::SubscriberExt as _};
 
@@ -51,9 +54,24 @@ pub fn console() -> Result<ConsoleSession, ProfileError> {
         .enable_self_trace(false)
         .build();
     let layer = layer.with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
-        matches!(metadata.target(), "runtime" | "tokio")
-            || metadata.target().starts_with("runtime::")
-            || metadata.target().starts_with("tokio::")
+        // Exact targets audited against pinned Tokio 1.54.1. No namespace prefix
+        // subscription: unrelated SDK/app targets and future targets stay excluded.
+        matches!(
+            metadata.target(),
+            "tokio::task"
+                | "tokio::task::blocking"
+                | "tokio::task::waker"
+                | "tokio::util::trace"
+                | "tokio::sync::batch_semaphore"
+                | "tokio::sync::oneshot"
+                | "tokio::sync::barrier"
+                | "tokio::sync::mutex"
+                | "tokio::sync::rwlock"
+                | "tokio::time::sleep"
+                | "runtime::resource::state_update"
+                | "runtime::resource::async_op::state_update"
+                | "runtime::resource::poll_op"
+        )
     }));
     tracing::subscriber::set_global_default(tracing_subscriber::registry().with(layer))
         .map_err(|_| ProfileError::AlreadyInitialized)?;

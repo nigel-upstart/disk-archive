@@ -45,6 +45,35 @@ class ProfileTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.check("cpu", {"meta": {}, "threads": []})
 
+    def test_console_requires_real_numeric_poll_observations(self):
+        self.check("console", {"schema": 1, "tasks": 2, "polls": 3, "dropped_events": 0})
+        for field in ("tasks", "polls"):
+            with self.assertRaises(ValueError):
+                self.check("console", {"schema": 1, "tasks": 2, "polls": 3, "dropped_events": 0, field: 0})
+        with self.assertRaises(ValueError):
+            self.check("console", {"schema": 1, "tasks": 2, "polls": 3, "dropped_events": 0, "raw_task": "unsafe"})
+
+    def test_pipeline_receipt_requires_actual_full_corpus(self):
+        receipt = dict(schema=1, files=32, deleted=32, retained=0, rules=488,
+                       verified_downloads=32, process_spawns=0, peak_temp_bytes=1234)
+        self.check("run", receipt)
+        for field in ("deleted", "rules", "verified_downloads", "peak_temp_bytes"):
+            with self.assertRaises(ValueError):
+                self.check("run", {**receipt, field: 0})
+
+    def test_svg_requires_real_samples_and_decodes_private_entities(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "cpu.svg"
+            path.write_text('<svg xmlns="http://www.w3.org/2000/svg"><g><title>all (123 samples, 100%)</title></g></svg>')
+            validator.validate("svg", path)
+            path.write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
+            with self.assertRaises(ValueError):
+                validator.validate("svg", path)
+            marker = ''.join('&#' + str(c) + ';' for c in validator.CANARIES[0])
+            path.write_text('<svg xmlns="http://www.w3.org/2000/svg"><title>all (123 samples, 100%)</title><text>' + marker + '</text></svg>')
+            with self.assertRaises(ValueError):
+                validator.validate("svg", path)
+
     def test_empty_or_missing_artifact_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "missing"

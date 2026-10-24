@@ -42,6 +42,27 @@ In the legacy run the scan, redact and verify queues stayed saturated while the 
 - **Local-only coverage report:** a script maps the detector **names and counts** in an existing legacy state DB to the new rule IDs. No values are read, and the output is never committed.
 - The regex rules in the legacy redactor (env-var assignments and PEM blocks) stay as an extra layer next to the scanner.
 
+## Implementation checkpoint (PR #13)
+
+Native Kingfisher is pinned to c0a65103432434b2e4f502d519ed25566faa282e;
+all 488 rules compile, with bounded lazy-DFA admission and callback confirmation.
+The Send+Sync catalog is shared across workers; per-call scratch/cache stays local.
+Defaults align with core's 1 MiB physical record, with explicit fail-closed caps.
+Independent direct plants plus core env rules, benign fixtures, practical JSONL
+bounds, zeroization and real core redaction/rescan tests pass locally. Mandatory
+Linux syscall and cargo-fuzz gates run in CI; do not infer their result from this note.
+
+Pinned TH 3.99.2 comparison reports direct synthetic cloud/JWT/private-key/env
+misses separately; native/core handle these direct plants. Bounded preflight
+rescans JSON-Unicode, percent, UTF8/base64 and raw/base64 UTF16LE/BE carriers with
+the same catalog. Confirmed decoded secrets block/retain instead of inventing raw
+offsets. Budgets fail closed; issue #18 retains offset-aware redaction follow-up.
+ADR007 states probe limits, not universal decoder completeness.
+
+**Issue #6 remains open:** throughput and instruction-count acceptance is explicitly
+pending the separately assigned issue #7 perf harness. Implementation merge must
+not close this issue or remove this mirror.
+
 ## Acceptance criteria
 
 - [ ] The ADR names the chosen scanner, its pinned revision and its native build prerequisites.

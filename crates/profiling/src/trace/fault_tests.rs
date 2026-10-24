@@ -133,6 +133,41 @@ fn poisoned_sink_is_acknowledged_and_finish_returns_static_error()
     let output = tempfile::tempfile()?;
     let observer = output.try_clone()?;
     let session = Session {
+        budget: Budget::default(),
+        guard: Some(guard),
+        buffer: writer,
+        output: Some(output),
+    };
+    assert_eq!(session.finish(), Err(ProfileError::Budget));
+    assert_eq!(observer.metadata()?.len(), 0);
+    Ok(())
+}
+
+#[test]
+fn actual_callback_cap_finishes_statically_without_exporting_partial_spans()
+-> Result<(), Box<dyn std::error::Error>> {
+    let writer = BoundedWriter::default();
+    let budget = Budget::default();
+    let (layer, guard) = tracing_chrome::ChromeLayerBuilder::new()
+        .writer(writer.clone())
+        .include_args(true)
+        .include_locations(false)
+        .build();
+    let layer = BoundedLayer {
+        inner: layer,
+        budget: budget.clone(),
+    };
+    let dispatch = tracing::Dispatch::new(tracing_subscriber::registry().with(layer));
+    tracing::dispatcher::with_default(&dispatch, || {
+        for file_id in 0..=budget::MAX_CALLBACKS / 2 {
+            crate::work(crate::Stage::Scan, file_id, || ());
+        }
+    });
+    assert!(budget.exceeded());
+    let output = tempfile::tempfile()?;
+    let observer = output.try_clone()?;
+    let session = Session {
+        budget,
         guard: Some(guard),
         buffer: writer,
         output: Some(output),

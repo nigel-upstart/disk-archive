@@ -1,0 +1,57 @@
+"""Optional pinned TruffleHog comparison. Persist names/counts only, never results."""
+
+from collections import Counter
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+
+def main() -> None:
+    binary = sys.argv[1]
+    version = subprocess.run([binary, "--version"], capture_output=True, check=True, text=True)
+    if (version.stdout + version.stderr).strip() != "trufflehog 3.99.2":
+        raise ValueError("comparison requires exactly TruffleHog 3.99.2")
+    root = Path("target/scanner-fixtures")
+    planted = (root / "planted.txt").read_bytes()
+    manifest = [line.split("\t") for line in (root / "manifest.tsv").read_text().splitlines()[1:]]
+    report = {"version": "3.99.2", "verification": False, "families": {}, "benign_detector_counts": {}, "encoded_variants": {}}
+    for name in ("planted", "benign", "json-unicode", "url-percent", "base64", "base64-assignment", "base64-url-binary", "base64-prefixed", "base64-wrapped", "base64-indented", "base64-yaml-block", "base64-first-prefix", "base64-trailing-space", "base64-json-indented", "base64-utf16le-wrapped", "base64-utf16be-wrapped", "utf16le", "utf16be", "utf16le-bom", "utf16be-bom", "base64-utf16le", "base64-utf16be"):
+        command = [binary, "filesystem", "--no-update", "--no-verification", "--json", "--log-level=-1", "--concurrency=1", "--fail-on-scan-errors", str(root / (name + ".txt"))]
+        # Results containing raw values remain only in this process, never files,
+        # logs, exception text or CI artifacts. Do not echo subprocess errors.
+        result = subprocess.run(command, capture_output=True, timeout=180)
+        if result.returncode:
+            raise ValueError("pinned comparison failed (output suppressed)")
+        results = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+        counts = Counter(item["DetectorName"] for item in results)
+        if name == "benign":
+            report["benign_detector_counts"] = dict(sorted(counts.items()))
+            if counts:
+                raise ValueError("pinned comparison produced unexpected benign findings")
+        elif name == "planted":
+            report["planted_detector_counts"] = dict(sorted(counts.items()))
+            for family, rule, start, end in manifest:
+                value = planted[int(start):int(end)]
+                recalled = any(value in item.get("Raw", "").encode() for item in results)
+                report["families"][family] = {"expected": 1, "trufflehog_recalled": int(recalled)}
+        else:
+            _, _, start, end = next(plant for plant in manifest if plant[0] == "github")
+            value = planted[int(start):int(end)]
+            recalled = any(value in item.get("Raw", "").encode() for item in results)
+            report["encoded_variants"][name] = {
+                "expected": 1, "trufflehog_recalled": int(recalled),
+                "trufflehog_detector_counts": dict(sorted(counts.items())),
+                "native_scope": "same-catalog decoded confirmation blocks file with UnsupportedEncoding; pinned by catalog test",
+            }
+    # TH is a comparison, not the independent manifest gate. Misses are reported.
+    destination = Path("target/scanner-parity.json")
+    destination.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    print(json.dumps(report, sort_keys=True))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (ValueError, KeyError, OSError, subprocess.SubprocessError, json.JSONDecodeError):
+        sys.exit("scanner comparison failed; diagnostics suppressed to protect values")

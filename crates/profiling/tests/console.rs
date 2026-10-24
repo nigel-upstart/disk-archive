@@ -13,6 +13,10 @@ fn console_without_unstable_fails_before_runtime_or_listener() {
 #[cfg(tokio_unstable)]
 #[test]
 fn console_serves_only_loopback_and_stops_explicitly() -> Result<(), Box<dyn std::error::Error>> {
+    assert!(matches!(
+        disk_archive_profiling::console(),
+        Err(disk_archive_profiling::ProfileError::Output)
+    ));
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
@@ -30,7 +34,17 @@ fn console_serves_only_loopback_and_stops_explicitly() -> Result<(), Box<dyn std
         })
         .await?;
         drop(connection);
-        session.finish().await?;
+        let task = tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+        });
+        let observation = disk_archive_profiling::observe_console().await;
+        task.await?;
+        // Always finish the real server, including when numeric observation failed.
+        let finished = session.finish().await;
+        let observation = observation?;
+        assert!(observation.tasks > 0);
+        assert!(observation.polls > 0);
+        finished?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })
 }

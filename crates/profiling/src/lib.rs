@@ -79,4 +79,4 @@ pub use heap::HeapSession;
 #[cfg(feature = "console")]
 mod console;
 #[cfg(feature = "console")]
-pub use console::console;
+pub use console::{ConsoleObservation, ConsoleSession, console, observe_console};

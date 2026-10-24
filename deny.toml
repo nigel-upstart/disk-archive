@@ -5,13 +5,42 @@ all-features = true
 unmaintained = "all"
 yanked = "deny"
 # Exceptions must name an owner, reason, tracking issue, and YYYY-MM-DD expiry.
-ignore = []
+ignore = [
+  { id = "RUSTSEC-2026-0319", reason = "Owner: maintainer; #17; expires 2026-11-21; anymap2 via Liquid; validation templates never executed" },
+  { id = "RUSTSEC-2020-0163", reason = "Owner: maintainer; #17; expires 2026-11-21; term_size via tokei; byte scanning never invokes terminal rendering" },
+  { id = "RUSTSEC-2024-0449", reason = "Owner: maintainer; #17; expires 2026-11-21; unsafe-libyaml via serde_yaml; only immutable embedded catalog YAML is parsed" },
+]
 
 [licenses]
 confidence-threshold = 0.95
 allow = ["MIT", "Apache-2.0", "ISC", "BSD-3-Clause", "Unicode-3.0"]
-# Owner: maintainer; #5; expires 2026-11-21; permissive Zlib hash-table implementation.
-exceptions = [{ crate = "foldhash@0.2.0", allow = ["Zlib"] }]
+# Owner: maintainer; #17; expires 2026-11-21. Exact crates only; see docs/dependencies.md.
+exceptions = [
+  { crate = "bip39@2.2.2", allow = [
+    "CC0-1.0",
+  ] },
+  { crate = "bitcoin_hashes@0.14.101", allow = [
+    "CC0-1.0",
+  ] },
+  { crate = "hex-conservative@0.2.3", allow = [
+    "CC0-1.0",
+  ] },
+  { crate = "colored@2.2.0", allow = [
+    "MPL-2.0",
+  ] },
+  { crate = "foldhash@0.2.0", allow = [
+    "Zlib",
+  ] },
+  { crate = "zlib-rs@0.6.8", allow = [
+    "Zlib",
+  ] },
+  { crate = "xxhash-rust@0.8.19", allow = [
+    "BSL-1.0",
+  ] },
+  { crate = "libfuzzer-sys@0.4.13", allow = [
+    "NCSA",
+  ] },
+]
 
 [bans]
 multiple-versions = "deny"
@@ -19,18 +48,40 @@ wildcards = "deny"
 # Add only explicitly reviewed duplicate versions, with an explanation and issue.
 skip = [
   { crate = "miniz_oxide@0.8.9", reason = "Owner: maintainer; #8; expires 2026-11-21; optional DHAT backtrace/object API vs current gzip compression API" },
-  { crate = "base64@0.22.1", reason = "Owner: maintainer; #5; expires 2026-11-21; AWS histogram/mock API vs hyper transport API" },
-  { crate = "block-buffer@0.10.4", reason = "Owner: maintainer; #5; expires 2026-11-21; AWS checksums vs current RustCrypto digest API" },
+  { crate = "rustc-hash@1.1.0", reason = "Owner: maintainer; #8; expires 2026-11-21; optional DHAT 0.3.3 hash-map API vs native catalog rustc-hash 2 API" },
+  { crate = "untrusted@0.7.1", reason = "Owner: maintainer; #17; expires 2026-11-21; Kingfisher aws-lc-rs parser API vs SDK rustls-webpki parser API" },
+  { crate = "base64@0.22.1", reason = "Owner: maintainer; #17; expires 2026-11-21; tiktoken build API vs catalog/pem API" },
+  { crate = "block-buffer@0.10.4", reason = "Owner: maintainer; #17; expires 2026-11-21; gix/native digest vs catalog digest" },
+  { crate = "cpufeatures@0.2.17", reason = "Owner: maintainer; #17; expires 2026-11-21; gix/native SHA vs catalog SHA/rand" },
+  { crate = "crypto-common@0.1.7", reason = "Owner: maintainer; #17; expires 2026-11-21; gix/native digest vs catalog digest" },
+  { crate = "digest@0.10.7", reason = "Owner: maintainer; #17; expires 2026-11-21; gix/native hashing vs catalog hashing" },
+  { crate = "getrandom@0.2.17", reason = "Owner: maintainer; #17; expires 2026-11-21; tokei PHF/tera rand vs catalog rand" },
+  { crate = "hashbrown@0.14.5", reason = "Owner: maintainer; #17; expires 2026-11-21; dashmap/clru/indexmap incompatible APIs" },
+  { crate = "hashbrown@0.16.1", reason = "Owner: maintainer; #17; expires 2026-11-21; dashmap/clru/indexmap incompatible APIs" },
+  { crate = "itertools@0.11.0", reason = "Owner: maintainer; #17; expires 2026-11-21; table_formatter vs catalog APIs" },
+  { crate = "rand@0.8.8", reason = "Owner: maintainer; #17; expires 2026-11-21; tokei PHF/tera vs catalog APIs" },
+  { crate = "rand_core@0.6.4", reason = "Owner: maintainer; #17; expires 2026-11-21; tokei PHF/tera vs catalog APIs" },
+  { crate = "serde_spanned@0.6.9", reason = "Owner: maintainer; #17; expires 2026-11-21; tokei TOML vs catalog TOML" },
+  { crate = "sha1@0.10.7", reason = "Owner: maintainer; #17; expires 2026-11-21; gix collision checking vs catalog" },
+  { crate = "sha2@0.10.9", reason = "Owner: maintainer; #17; expires 2026-11-21; native build hashing vs catalog" },
+  { crate = "syn@2.0.119", reason = "Owner: maintainer; #17; expires 2026-11-21; gix proc macros vs serde proc macros" },
+  { crate = "thiserror@1.0.69", reason = "Owner: maintainer; #17; expires 2026-11-21; native/table_formatter vs catalog derives" },
+  { crate = "thiserror-impl@1.0.69", reason = "Owner: maintainer; #17; expires 2026-11-21; native/table_formatter vs catalog derives" },
+  { crate = "toml@0.8.23", reason = "Owner: maintainer; #17; expires 2026-11-21; tokei vs catalog APIs" },
+  { crate = "toml_datetime@0.6.11", reason = "Owner: maintainer; #17; expires 2026-11-21; tokei TOML vs catalog TOML" },
+  { crate = "windows-sys@0.48.0", reason = "Owner: maintainer; #17; expires 2026-11-21; tokei/terminal_size/gix ABI APIs" },
+  { crate = "windows-sys@0.59.0", reason = "Owner: maintainer; #17; expires 2026-11-21; tokei/terminal_size/gix ABI APIs" },
+  { crate = "windows-targets@0.48.5", reason = "Owner: maintainer; #17; expires 2026-11-21; windows-sys ABI APIs" },
+  { crate = "windows_aarch64_gnullvm@0.48.5", reason = "Owner: maintainer; #17; expires 2026-11-21; windows-targets 0.48/0.52 ABI" },
+  { crate = "windows_aarch64_msvc@0.48.5", reason = "Owner: maintainer; #17; expires 2026-11-21; windows-targets 0.48/0.52 ABI" },
+  { crate = "windows_i686_gnu@0.48.5", reason = "Owner: maintainer; #17; expires 2026-11-21; windows-targets 0.48/0.52 ABI" },
+  { crate = "windows_i686_msvc@0.48.5", reason = "Owner: maintainer; #17; expires 2026-11-21; windows-targets 0.48/0.52 ABI" },
+  { crate = "windows_x86_64_gnu@0.48.5", reason = "Owner: maintainer; #17; expires 2026-11-21; windows-targets 0.48/0.52 ABI" },
+  { crate = "windows_x86_64_gnullvm@0.48.5", reason = "Owner: maintainer; #17; expires 2026-11-21; windows-targets 0.48/0.52 ABI" },
+  { crate = "windows_x86_64_msvc@0.48.5", reason = "Owner: maintainer; #17; expires 2026-11-21; windows-targets 0.48/0.52 ABI" },
+  { crate = "winnow@0.7.15", reason = "Owner: maintainer; #17; expires 2026-11-21; tokei toml_edit vs catalog TOML" },
   { crate = "core-foundation@0.9.4", reason = "Owner: maintainer; #5; expires 2026-11-21; Hickory system-configuration macOS DNS ABI vs rustls-native-certs security-framework ABI" },
-  { crate = "cpufeatures@0.2.17", reason = "Owner: maintainer; #5; expires 2026-11-21; AWS legacy hashes vs current RustCrypto CPU dispatch" },
   { crate = "crypto-bigint@0.5.5", reason = "Owner: maintainer; #5; expires 2026-11-21; AWS SigV4 vs current ECDSA API" },
-  { crate = "crypto-common@0.1.7", reason = "Owner: maintainer; #5; expires 2026-11-21; AWS legacy digests vs current RustCrypto API" },
-  { crate = "digest@0.10.7", reason = "Owner: maintainer; #5; expires 2026-11-21; AWS/config/mock legacy hashes vs current signing hashes" },
-  { crate = "getrandom@0.2.17", reason = "Owner: maintainer; #5; expires 2026-11-21; AWS crypto APIs vs current temporary-file randomness" },
-  { crate = "rand_core@0.6.4", reason = "Owner: maintainer; #5; expires 2026-11-21; AWS SigV4 ECDSA vs current signing API" },
-  { crate = "sha1@0.10.7", reason = "Owner: maintainer; #5; expires 2026-11-21; AWS/config/mock checksum APIs vs current AWS SigV4 hashes" },
-  { crate = "syn@2.0.119", reason = "Owner: maintainer; #5; expires 2026-11-21; AWS older derives vs current serde derives" },
-  { crate = "windows-sys@0.59.0", reason = "Owner: maintainer; #5; expires 2026-11-21; target-specific transfer-manager/native API vs current Tokio ABI" },
 ]
 
 [sources]

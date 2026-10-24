@@ -225,7 +225,7 @@ impl SdkStore {
         }
         let store = self.clone();
         let expected = expected.clone();
-        let path = upload.path().to_owned();
+        let path = upload.path()?.to_owned();
         let spool = upload.spool.clone();
         let child = cancel.child_token();
         // Dropping the caller future signals, but never drops the only abort handle.

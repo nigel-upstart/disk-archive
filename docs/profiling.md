@@ -1,7 +1,7 @@
 # Optional synthetic profiling
 
-**Owner:** Maintainers · **Status:** In preparation; application integration pending G merge
-**Last updated:** 2026-10-21 · **Links:** [issue 8](https://github.com/nigel-upstart/disk-archive/issues/8), [storage boundary](storage.md), [dependency admission](dependencies.md)
+**Owner:** Maintainers · **Status:** Application integration prepared; end-to-end validation pending
+**Last updated:** 2026-10-24 · **Links:** [issue 8](https://github.com/nigel-upstart/disk-archive/issues/8), [storage boundary](storage.md), [dependency admission](dependencies.md)
 
 Profiling is diagnostic, not a throughput baseline or production acceptance. The default build
 has no Chrome exporter, subscriber, console or DHAT dependency and starts no profiling resources.
@@ -16,19 +16,36 @@ Explicitly install optional tools with `task doctor -- --profiling`. This loads 
 permission to sample the caller's process; tooling never silently changes host kernel settings.
 The manual CI job may configure those permissions on its disposable runner.
 
-`task profile:trace`, `task profile:heap`, `task profile:console` and `task profile:cpu` are reserved
-for the bounded synthetic driver using the actual application pipeline, native detector and
-`SdkStore` injected with the localhost `MockS3`. Until that driver is integrated after G merges,
-they fail clearly rather than substitute a toy workload. No end-to-end artifacts have been
-produced yet. The launcher removes ambient AWS/application environment, uses a temporary HOME
-and synthetic roots, and never reads a real dotenv or credential provider chain. Output is
-private, non-overwriting, and under gitignored `profiles/`. Do not pass production roots or
-credentials to the driver. Console binds only `127.0.0.1:6669` and uses a bounded synthetic run.
+`task profile:trace`, `task profile:heap`, `task profile:console` and `task profile:cpu` build
+`crates/archiver/examples/profile-corpus.rs` and bind the exact executable from strict Cargo JSON.
+The driver uses the actual 488-rule native catalog, bounded application pipeline and `SdkStore`
+injected with localhost `MockS3` and fake credentials. Its independent corpus has 32 synthetic
+JSONL files with planted tokens, not a throughput baseline or a substitute pipeline. It checks
+terminal deletion rows, independently downloads/decompresses each archive, checks source and gzip
+identities and rejects surviving tokens. Numeric `run.json` is written only after verification
+and shutdown. End-to-end artifacts have not yet been validated for this source revision.
 
-Application initialization belongs **after** its dry-run early return. Even a profiling-enabled
+The launcher removes ambient AWS/application environment, uses a temporary HOME and synthetic
+roots, and never reads a real dotenv or credential provider chain. Output is private,
+non-overwriting, and under gitignored `profiles/`. Do not pass production roots or credentials
+to the driver. Console binds only `127.0.0.1:6669`; its real gRPC observer writes only numeric
+task/poll/drop counters to `console.json`, without serializing task fields. A manual-only workflow
+runs all four modes on `ubuntu-24.04` with isolated compiler configurations and a 120-minute
+cold-build budget. It uploads only validated artifacts and numeric run receipts, never raw perf
+capture, corpus, archive, Cargo build paths or failed/partial profiles.
+
+Application initialization occurs **after** its dry-run early return. Even a profiling-enabled
 dry run must perform no explicit output/lock/state/listener creation. Selecting a Cargo feature
 does not initialize a session. The heap-feature global allocator is linked in that binary, but
 collection starts only when its explicit post-dry-run `HeapSession` guard is constructed.
+The feature-build CI compiles the actual app/example without profiling a workload on PRs and
+runs a Linux syscall audit of the all-feature CLI's inert dry-run, with a real write/listener
+positive control. Each selected profiler must leave zero mutable-resource attempts.
+
+Explicit CLI selections are `--profile-trace PATH` (`profiling`), `--profile-heap PATH`
+(`profiling-heap`) and `--profile-console` (`profiling-console`, explicit `tokio_unstable`).
+Only one selection is accepted. No profiling environment filter or automatic output directory
+is used by the application. Dry-run parses these options but never initializes their resources.
 
 ## Reading artifacts
 
@@ -76,16 +93,19 @@ Call `finish()` only after the owned pipeline and detached cleanup have drained,
 early `?` while source/root ownership is still needed. Capture failures do not propagate through
 instrumented work. Unit fault injection covers actual Chrome cap overflow, partial capture,
 zero/partial output writes and flush errors. The application-level detached-work/guard ordering
-regression remains pending integration after G releases ownership. This is not a bound on the
-upstream exporter's channel, allocator overhead or total process RSS; the task corpus is bounded
-separately.
+regressions cover initialization failure and dropping the caller during an in-flight upload;
+the profiler is owned by the shielded pipeline, not its cancellable waiter. A callback budget
+also stops admission after 65,536 upstream enter/exit callbacks, bounding total input to the
+pinned exporter's unbounded channel. This is not a bound on allocator overhead or total process
+RSS; the task corpus and pipeline queues are bounded separately.
 
 DHAT normally records the process command line. Its pinned public memory-export method is used
 to replace that field before writing JSON; no raw DHAT file is created. The wrapper deliberately
 uses `ManuallyDrop` to avoid DHAT finishing twice after memory export, without unsafe code. This
 API is documented upstream as testing-only and must be re-audited when upgrading; using it avoids
-carrying a fork or persisting arbitrary command-line values. Console collects only Tokio/runtime
-telemetry, not SDK body/auth events; do not name synthetic tasks with input-derived strings.
+carrying a fork or persisting arbitrary command-line values. Console collects only an exact allowlist of pinned Tokio runtime targets,
+not arbitrary namespace prefixes or SDK body/auth events; do not name tasks with input-derived
+strings. The numeric gRPC receipt drops task names, fields, locations and raw protobuf.
 
 Exporter tests run the real libraries, assert valid JSON, plant a private marker in a future,
 SDK event, first-party event and OS thread name, and confirm its absence. Artifact validation

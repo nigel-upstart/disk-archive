@@ -15,7 +15,12 @@ profiling = [
   "dep:serde_json",
 ]
 heap = ["profiling", "dep:dhat"]
-console = ["profiling", "dep:console-subscriber", "dep:tokio"]
+console = [
+  "profiling",
+  "dep:console-subscriber",
+  "dep:console-api",
+  "dep:tokio",
+]
 
 [dependencies]
 tracing = { version = "=0.1.44", default-features = false, features = [
@@ -30,7 +35,8 @@ tracing-subscriber = { version = "=0.3.23", default-features = false, features =
 serde_json = { version = "=1.0.154", optional = true }
 dhat = { version = "=0.3.3", optional = true }
 console-subscriber = { version = "=0.5.0", default-features = false, optional = true }
-tokio = { version = "=1.54.0", features = ["rt", "tracing"], optional = true }
+console-api = { version = "=0.9.0", features = ["transport"], optional = true }
+tokio = { version = "=1.54.1", features = ["rt", "tracing"], optional = true }
 
 [dev-dependencies]
 tempfile = "=3.27.0"

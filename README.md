@@ -12,6 +12,15 @@ The port will require verified upload before deletion, injective S3 object keys,
 and a change-nothing `--dry-run`. Secret values must never enter logs or state.
 The legacy reference does **not** satisfy all these guarantees; its CLI is disabled.
 
+Encoded-secret preflight conservatively blocks and retains files when decoded
+redaction is unavailable. A literal secret sharing a JSONL carrier with common
+escapes (such as `\\n` or `\\"`) can therefore retain the entire file rather than
+redact it; retained files accumulate until offset-aware decoded redaction lands
+in [issue #18](https://github.com/nigel-upstart/disk-archive/issues/18). Literal
+presence never exempts an encoded copy. NUL-bearing remainders stay one bounded
+carrier through EOF; UTF-16 expansion can exhaust its decoded-output budget near
+683 KiB, below the 1 MiB allocation ceiling. See [ADR 007](docs/adr/007-bounded-scanner.md).
+
 This repository must remain **private** until a full-history secret/configuration
 and author audit is complete and the owner explicitly approves publication.
 Never commit `.env`, runtime state, logs, archives, or actual session content.
@@ -45,7 +54,8 @@ files are involved in the parity check.
 [The profiling guide](docs/profiling.md) describes opt-in synthetic trace, heap, console and CPU
 workflows. Trace JSON opens in Perfetto/Chrome, DHAT JSON in `dh_view.html`, macOS CPU JSON in
 samply, and Linux flamegraphs as SVG. The default build has no exporters or profiling resources.
-Application integration and actual profile evidence are still pending; never use production roots.
+The opt-in tasks use the real native pipeline with synthetic roots and localhost S3 only.
+End-to-end profile validation is pending; never use production roots.
 
 ## License
 

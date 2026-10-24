@@ -13,7 +13,8 @@ def main() -> None:
             "--format", "{p}", "-p", package,
         ], text=True)
         names = {line.split()[0] for line in output.splitlines() if line.strip()}
-        if names & FORBIDDEN:
+        forbidden = FORBIDDEN | ({"disk-archive-profiling"} if package == "disk-archive" else set())
+        if names & forbidden:
             raise ValueError("optional profiling dependency reached the default graph")
     print("Default application and profiling helper graphs contain no optional exporters")
 

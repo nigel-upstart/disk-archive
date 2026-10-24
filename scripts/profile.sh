@@ -9,10 +9,6 @@ case "$mode" in cpu | trace | heap | console) ;; *)
 esac
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
-if [[ ! -f crates/archiver/examples/profile-corpus.rs ]]; then
-	printf 'The real G/H synthetic profile driver is not integrated yet; no surrogate run is available.\n' >&2
-	exit 1
-fi
 features=profiling
 if [[ $mode == heap ]]; then features=profiling-heap; fi
 if [[ $mode == console ]]; then
@@ -24,10 +20,6 @@ if [[ $mode == cpu && $(uname -s) == Linux ]]; then
 	# Frame-pointer sampling records addresses, not raw DWARF stack-memory dumps.
 	export RUSTFLAGS="${RUSTFLAGS:-} -C force-frame-pointers=yes"
 fi
-# Native dependencies share the ordinary debug cache. No duplicate release profile.
-cargo build --locked -p disk-archive --example profile-corpus --features "$features"
-target_dir=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
-binary="$target_dir/debug/examples/profile-corpus"
 umask 077
 if [[ -L profiles ]]; then
 	printf 'Refusing symlink profile output directory.\n' >&2
@@ -36,6 +28,8 @@ fi
 mkdir -p profiles
 run_dir=$(mktemp -d "$root/profiles/$mode-XXXXXXXX")
 mkdir "$run_dir/home"
+# Cargo JSON, never a stale unsuffixed executable or a guessed target directory.
+binary=$(python3 scripts/profile-build.py --features "$features" --receipt "$run_dir/build.json")
 # Deliberately no AWS_*, DISK_ARCHIVE_*, XDG_*, RUST_LOG or ambient HOME/dotenv.
 # The driver takes only a mode/output directory and constructs synthetic roots,
 # native scanner and the real SdkStore injected with H's localhost MockS3 client.
@@ -46,8 +40,9 @@ trace | heap)
 	python3 scripts/profile-validate.py "$mode" "$run_dir/$mode.json"
 	;;
 console)
-	printf 'Attach with: tokio-console http://127.0.0.1:6669 (synthetic run, bounded to 30 seconds)\n'
+	printf 'Attach with: tokio-console http://127.0.0.1:6669 (synthetic pipeline plus a 3-second attach period)\n'
 	"${clean[@]}" "$binary" console "$run_dir"
+	python3 scripts/profile-validate.py console "$run_dir/console.json"
 	;;
 cpu)
 	case $(uname -s) in
@@ -67,4 +62,5 @@ cpu)
 	esac
 	;;
 esac
+python3 scripts/profile-validate.py run "$run_dir/run.json"
 printf 'Synthetic profile completed under profiles/; inspect artifacts locally before sharing.\n'

@@ -1,0 +1,27 @@
+[package]
+name = "disk-archive-scanner-fuzz"
+version = "0.1.0"
+publish = false
+edition = "2024"
+license = "MIT"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "=0.4.13"
+disk-archive-scanner = { path = "../crates/scanner", version = "=0.1.0" }
+disk-archive-core = { path = "../crates/core", version = "=0.1.0" }
+zeroize = "=1.9.1"
+
+[[bin]]
+name = "scanner_redactor"
+path = "fuzz_targets/scanner_redactor.rs"
+test = false
+doc = false
+bench = false
+
+[lints.rust]
+unsafe_code = "forbid"

@@ -4,6 +4,7 @@ case ${1:?gate required} in
 fmt)
 	# The virtual root defaults to all own workspace members, excluding audited vendor.
 	cargo fmt --check
+	cargo fmt --manifest-path fuzz/Cargo.toml --check
 	taplo fmt --check
 	shfmt -d scripts/*.sh
 	;;
@@ -21,13 +22,18 @@ test)
 	cargo nextest run --workspace --all-features --locked
 	cargo test --workspace --doc --all-features --locked
 	python3 -B -m unittest discover -s scripts/tests -v
+	python3 -B crates/archiver/tests/run.py
+	python3 -B crates/archiver/tests/run.py --profiling
+	python3 scripts/profile-default.py
 	;;
 coverage)
 	cargo llvm-cov --workspace --all-features --locked --fail-under-lines 90 --ignore-filename-regex 'crates/archiver/src/main.rs' --lcov --output-path target/coverage.lcov
 	;;
 supply-chain)
 	python3 scripts/policy.py workspace
+	python3 scripts/policy.py exceptions
 	cargo deny check
+	cargo deny --manifest-path fuzz/Cargo.toml check
 	# Audit every own workspace package, not unchanged externally audited vendor internals.
 	cargo machete crates
 	;;

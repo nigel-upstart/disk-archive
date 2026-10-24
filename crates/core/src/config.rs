@@ -41,7 +41,7 @@ pub struct Config {
     pub work_dir: Option<PathBuf>,
     /// Checked minimum age in seconds, passed to the age kernel.
     pub min_age_secs: u64,
-    /// Bounded shell worker concurrency.
+    /// Bounded shell worker concurrency; default available parallelism, capped at 256 (fallback 1).
     pub workers: usize,
     /// Redaction resource budgets.
     pub redaction: Limits,
@@ -172,7 +172,12 @@ impl Config {
                 .number("MIN_AGE_DAYS", 30, u64::MAX)?
                 .checked_mul(86_400)
                 .ok_or(ConfigError::Setting)?,
-            workers: settings.size("WORKERS", 4, 256)?,
+            workers: settings.size(
+                "WORKERS",
+                u64::try_from(std::thread::available_parallelism().map_or(1, |n| n.get().min(256)))
+                    .map_err(|_| ConfigError::Setting)?,
+                256,
+            )?,
             redaction: Limits {
                 max_line_bytes: settings.size("MAX_LINE_BYTES", 1_048_576, 16_777_216)?,
                 max_output_line_bytes: settings.size(

@@ -103,14 +103,14 @@ parentheses). Use the `anthropic/` and `openai-codex/` providers, not Bedrock, f
 
 | Wave | ID | Work | Issues | Archetype | Model @ effort (fallback) | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2 | F | In-process scanner: Kingfisher library spike → ADR → integration (or the in-house fallback), no-network and zeroize tests, fuzz target, planted-corpus parity versus `trufflehog` | #6 | terminal_heavy_implementation | `openai-codex/gpt-6.1-sol` @ high (`anthropic/claude-opus-5-5` @ high) | todo |
-| 3 | G | tokio pipeline, single SQLite writer task, cancellation and lock file, CLI (`--limit`, change-nothing `--dry-run`, `--workers`), manifest, end-to-end tests | #3 | median_repository_implementation | `anthropic/claude-opus-5-5` @ medium (`gpt-6.1-sol` @ high) | todo |
 | 3 | I | Perf harness: seeded corpus generator, criterion + gungraun benches, deterministic counters, statistical gate logic, record-only `perf` job | #7 (part) | terminal_heavy_implementation | `openai-codex/gpt-6.1-sol` @ high (`anthropic/claude-opus-5-5` @ high) | todo |
 | 4 | R | Independent read-only review, from a different vendor, of the delete-safety, redaction, and cancellation rules across the data plane; findings posted to the open PRs or new issues | — | code_review | `openai-codex/gpt-6-astra` @ high (`gpt-6.1-sol` @ medium) | todo |
-| 4 | J | Optional `profiling` feature and `task profile:*` targets | #8 | deliberate_tool_workflow | `openai-codex/gpt-6.1-sol` @ medium (`gpt-5.6-terra` @ high) | todo |
+| 4 | J | Optional `profiling` feature and `task profile:*` targets | #8 | deliberate_tool_workflow | `openai-codex/gpt-6.1-sol` @ medium (`gpt-5.6-terra` @ high) | integrated source; actual artifacts/full gates/review pending |
 | 4 | K | README usage, migration notes (old and new key layouts), final `AGENTS.md`, remove `legacy/python/` once parity is proven, remove `plan/` items that are done | — | deliberate_tool_workflow | `openai-codex/gpt-6.1-sol` @ medium (`gpt-5.6-terra` @ high) | todo |
 | 5 | Z | Pre-publish audit (read-only): gitleaks + trufflehog over the **entire history**, a history search for every local `.env` value and for account IDs and emails, commit-author check, confirmation that no state DBs, logs, archives, or `.env` files were ever committed, review of repo settings | — | highest_risk_advisory | `anthropic/claude-opus-5-5` @ max (`gpt-6-astra` @ high → `gpt-6.1-sol` @ max) | todo |
 
+G implementation lives in `crates/archiver` and its [embedding/ownership contract](../crates/archiver/README.md).
+Issue #3 remains open for I/J performance/profiling evidence; implementation merge is not closure.
 H implementation lives in `crates/storage` and [docs/storage.md](../docs/storage.md).
 Issues #4/#5 retain external real-S3, corporate-proxy and performance acceptance; implementation
 merge is not issue closure. Approved audited vendor patches are tracked in
@@ -121,10 +121,9 @@ merge is not issue closure. Approved audited vendor patches are tracked in
 - **Wave 1:** merge A → B → P.
 - **Wave 2:** starts once B and P are merged. D, E, and F own separate crates. D tests against
   P's reference kernels while E replaces them with verified versions.
-- **Wave 3:** starts once D and E are merged. H first lands the `ObjectStore` test interface and
-  in-process S3 mock seam so G can test without waiting for H's production SDK integration.
-  F must be merged before G's end-to-end tests use the in-process scanner. G's implementation
-  merge unlocks H's production integration and later profiling; it does **not** close #3.
+- **Wave 3:** G uses the actual merged F scanner and H SDK/in-process S3 mock, including the
+  observed-HEAD proof projection correction. G's implementation merge unlocks I/J integration;
+  it does **not** close #3.
   Keep #3's final profiling/performance acceptance open until I/J supply the evidence. Issues
   #4/#7/#8 do not require #3 to close before their implementation can proceed.
 - **Wave 4:** starts once G and H are merged. I/J results complete #3's remaining acceptance;

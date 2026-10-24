@@ -1,0 +1,11 @@
+# Native catalog compilation has high peak memory; never run two catalog tests together.
+[test-groups.native-catalog]
+max-threads = 1
+
+[[profile.default.overrides]]
+filter = 'package(disk-archive-scanner) & binary(catalog)'
+test-group = 'native-catalog'
+threads-required = 4
+
+[profile.default]
+test-threads = 4

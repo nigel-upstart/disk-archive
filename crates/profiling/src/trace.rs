@@ -6,6 +6,9 @@ use std::sync::{Arc, Mutex};
 use serde_json::{Value, json};
 use tracing_subscriber::{Layer as _, layer::SubscriberExt as _};
 
+mod budget;
+use budget::{BoundedLayer, Budget};
+
 const MAX_TRACE_BYTES: usize = 16 * 1_048_576;
 
 /// Static errors; never carry output paths, SDK errors or configuration values.
@@ -73,6 +76,7 @@ pub struct Session {
     guard: Option<tracing_chrome::FlushGuard>,
     buffer: BoundedWriter,
     output: Option<File>,
+    budget: Budget,
 }
 
 impl Session {
@@ -89,6 +93,11 @@ impl Session {
             .include_args(true)
             .include_locations(false)
             .build();
+        let budget = Budget::default();
+        let layer = BoundedLayer {
+            inner: layer,
+            budget: budget.clone(),
+        };
         let layer = layer.with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
             metadata.target() == "disk_archive_profiling::safe_stage"
                 && metadata.is_span()
@@ -101,6 +110,7 @@ impl Session {
             guard: Some(guard),
             buffer,
             output: Some(output),
+            budget,
         })
     }
 
@@ -120,6 +130,9 @@ impl Session {
             return Ok(());
         };
         drop(self.guard.take());
+        if self.budget.exceeded() {
+            return Err(ProfileError::Budget);
+        }
         let buffer = self.buffer.0.lock().map_err(|_| ProfileError::Budget)?;
         write_artifact(&buffer, &mut output)
     }
