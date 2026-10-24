@@ -57,17 +57,36 @@ def reviewed_baseline(root: Path, explicit: Path | None) -> tuple[dict | None, P
     if explicit is not None:
         raise ValueError("hosted baseline provenance cannot be replaced by a local pathname")
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
-    revision = event["pull_request"]["base"]["sha"] if os.environ["GITHUB_EVENT_NAME"] == "pull_request" else subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
+    is_pr = os.environ["GITHUB_EVENT_NAME"] == "pull_request"
+    revision = event["pull_request"]["base"]["sha"] if is_pr else subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
     if not re.fullmatch(r"[a-f0-9]{40}", revision):
         raise ValueError("immutable reviewed baseline tree required")
     names = subprocess.check_output(["git", "ls-tree", "-r", "--name-only", revision, "--", "bench/baseline"], cwd=root, text=True).splitlines()
     candidates = [name for name in names if re.fullmatch(r"bench/baseline/[A-Za-z0-9._-]+\.json", name)]
     if len(candidates) > 1 or any(name.endswith(".json") and name not in candidates for name in names):
         raise ValueError("unambiguous reviewed baseline selection required")
+    if is_pr:
+        changed = subprocess.check_output(
+            ["git", "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-only", revision, "HEAD", "--", ":(glob)bench/baseline/**/*.json"],
+            cwd=root, text=True,
+        )
+        if changed.strip():
+            raise ValueError("measured Git tree changes a baseline; separately approved activation required")
+        directory = root / "bench/baseline"
+        if directory.is_symlink():
+            raise ValueError("reviewed baseline directory cannot be aliased")
+        measured = sorted(directory.rglob("*.json"))
+        if [path.relative_to(root).as_posix() for path in measured] != candidates or any(path.is_symlink() or not path.is_file() for path in measured):
+            raise ValueError("baseline creation/deletion/rename requires separately approved activation")
     if not candidates:
         return None, None
     data = subprocess.check_output(["git", "show", f"{revision}:{candidates[0]}"], cwd=root, text=True)
-    return json.loads(data), root / candidates[0]
+    selected = root / candidates[0]
+    # Until the separately approved publication/promotion workflow exists, a PR
+    # cannot self-approve ANY edited ceiling, even if its measured code is faster.
+    if is_pr and selected.read_text() != data:
+        raise ValueError("baseline edits require separately reviewed refresh/ratchet activation")
+    return json.loads(data), selected
 
 
 def save(path: Path, value: dict) -> None:

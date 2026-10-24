@@ -135,8 +135,14 @@ deterministic kernels are never rerun. Only sanitized metadata is uploaded, not
 corpora, archives, local build-path receipts, raw strace or Callgrind profiles.
 Missing observations/public baselines fail closed; no workflow fallback weakens
 public enforcement. Hosted PRs read ceilings from the immutable reviewed base tree,
-never from a ceiling raised in their own diff. This workflow has NOT yet been hosted
-executed. GitHub returns 403 for required branch checks on this private personal
+never from a ceiling raised in their own diff. The source guard also compares the committed Git trees, then checks worktree
+presence/content and aliases: copied worktree files cannot hide tracked deletion.
+Creation, deletion, edits, renames, additional files and symlink aliases fail;
+this collector cannot self-approve a baseline change. Bootstrap history checking
+covers baseline JSON recursively, not only direct children.
+The separately approved publication/promotion/ratchet workflow remains future work.
+Draft PR #23 has started hosted execution; no completed hosted performance result
+is claimed yet. GitHub returns 403 for required branch checks on this private personal
 repository without a paid upgrade/publication. Neither is authorized; required-check
 activation therefore remains an explicit external blocker, not a passing claim.
 
@@ -148,7 +154,7 @@ can use the advisory comparison CLI, not a skipped-success full collection.
 
 Actual merged-G Cargo validation has passed 160 Rust tests (zero skips), including
 SDK/multipart and native controls, plus the normal and instrumented 89+1 collector.
-All 74 Python controls pass locally and with `GITHUB_ACTIONS=true`; injected
+All 78 Python controls pass locally and with `GITHUB_ACTIONS=true`; injected
 orchestration controls are NOT hosted noise
 or genuine regression-injection evidence. Current instrumented coverage is 94.65%
 (6,330/6,688 lines), with the collector included rather than excluded. The first full
@@ -158,8 +164,24 @@ complete `task check` passes, including 51 Verus proofs/negative controls, parit
 supply-chain gates and seven SBOMs. CodeRabbit's first exact-head review identified
 a test-only ambient-hosted-environment dependency; a red reproduction and local/
 hosted-environment controls validate its fix without downgrading production gates.
-The fix still needs normal push hooks/current-head review/CI. Real hosted
-Linux/Valgrind/resource runs,
+The CI-isolation fix's normal push hook and fresh exact-head review passed on
+`98eec4b`. Self-review then exposed the deleted-baseline gap; its red reproduction
+and source-only guard controls pass, but the new guard still needs a commit hook,
+fresh review and full new-head push/CI. That draft head is not mergeable. Its push CI has also failed the Linux functional
+collector check after the Python controls; the previous generic diagnostic does
+not establish the failing phase. The helper now emits only an allowlisted phase,
+optional executable byte size and numeric exit status—never argv, exception text
+or child output. Self-hashing streams the complete regular executable bounded by
+its observed metadata size, rather than rejecting an otherwise valid Linux debug
+image above an arbitrary 512 MiB cutoff. The cutoff is a possible blocker, not a
+proven explanation of the old CI failure; new Linux evidence is still required.
+The first hosted release build and real Criterion runs passed, but Callgrind failed
+before a complete event receipt. Only allowlisted failure categories, exit codes
+and observed output-file counts are now exposed; raw tool output is not forwarded
+or persisted. Successfully compiled release inputs can be cached even when a later
+measurement fails, with unchanged trusted-ref/compiler/native-key restrictions;
+this neither marks the measurement green nor caches runtime inputs/reports.
+Real hosted Linux/Valgrind/resource results,
 required-check activation, baseline approval/ratchet wiring, ten unchanged-main
 hosted noise runs and the throwaway regression PR remain pending.
 Unit controls do not satisfy those acceptance criteria or close issue #7.

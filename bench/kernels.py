@@ -61,6 +61,23 @@ def load(path: Path, environment: dict) -> dict:
     return value
 
 
+def failure_category(stderr: bytes) -> str:
+    """Classify bounded tool diagnostics without forwarding any raw output or paths."""
+    prefix = stderr[:8192].lower()
+    for category, needles in (
+        ("runner-arguments", (b"unexpected argument", b"unrecognized option")),
+        ("unsupported-instruction", (b"unrecognised instruction", b"unsupported instruction")),
+        ("execution-permission", (b"permission denied",)),
+        ("runner-or-tool-not-found", (b"not installed", b"not found", b"no such file")),
+        ("cargo-metadata", (b"cargo metadata",)),
+        ("benchmark-panic", (b"panicked", b"panic")),
+        ("tool-version", (b"version mismatch",)),
+    ):
+        if any(needle in prefix for needle in needles):
+            return category
+    return "tool-failed"
+
+
 def collect(build: Path, output: Path) -> None:
     if sys.platform != "linux" or output.exists():
         raise ValueError("Linux real Valgrind and new kernel receipt required")
@@ -72,9 +89,22 @@ def collect(build: Path, output: Path) -> None:
         temporary = Path(owned)
         # Neither profiles (which contain paths) nor raw tool output become artifacts.
         settings = dict(os.environ, GUNGRAUN_HOME=str(temporary))
-        subprocess.run([str(binary), "--output-format=json"], cwd=root, env=settings, check=True, timeout=1200,
-                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        observed = counts(temporary)
+        result = subprocess.run([str(binary), "--output-format=json"], cwd=root, env=settings, check=False, timeout=1200,
+                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        # Only fixed classifications and observed dump counts leave this scope;
+        # tool output is never forwarded or written to a log/artifact.
+        dump_count = len(list(temporary.rglob("callgrind.*.out")))
+        if result.returncode:
+            print("Kernel diagnostic: " + json.dumps(dict(stage="callgrind-execution", exit_status=result.returncode,
+                  observed_dumps=dump_count, category=failure_category(result.stderr)), sort_keys=True), file=sys.stderr)
+            raise subprocess.CalledProcessError(result.returncode, "callgrind-tool")
+        try:
+            observed = counts(temporary)
+        except (ValueError, OSError):
+            matches = {name: sum(path.name.startswith(f"callgrind.{function}.") for path in temporary.rglob("callgrind.*.out")) for name, function in FUNCTIONS.items()}
+            print("Kernel diagnostic: " + json.dumps(dict(stage="event-extraction", observed_dumps=dump_count,
+                  kernel_matches=matches), sort_keys=True), file=sys.stderr)
+            raise
     if fingerprint(root, profile="release") != environment or binary_digest(binary) != before:
         raise ValueError("kernel binary/source/environment changed")
     with output.open("x") as stream:

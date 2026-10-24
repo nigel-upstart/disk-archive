@@ -609,6 +609,9 @@ async fn collect(corpus: &Path, binary_sha256: String) -> Result<Receipt> {
 
 fn binary_digest() -> Result<String> {
     let mut file = File::open(std::env::current_exe().map_err(|_| ())?).map_err(|_| ())?;
+    let metadata = file.metadata().map_err(|_| ())?;
+    let expected_bytes = metadata.len();
+    check(metadata.is_file() && expected_bytes > 0)?;
     let mut digest = Sha256::new();
     let mut buffer = vec![0_u8; 65_536];
     let mut total = 0_u64;
@@ -620,10 +623,13 @@ fn binary_digest() -> Result<String> {
         total = total
             .checked_add(u64::try_from(count).map_err(|_| ())?)
             .ok_or(())?;
-        check(total <= 512 * 1_048_576)?;
+        // Hash the complete trusted Cargo executable, including platform-specific
+        // debug information. Bound progress by its observed file size, not an
+        // arbitrary limit that can reject a valid Linux debug executable.
+        check(total <= expected_bytes)?;
         digest.update(buffer.get(..count).ok_or(())?);
     }
-    check(total > 0)?;
+    check(total == expected_bytes && file.metadata().map_err(|_| ())?.len() == expected_bytes)?;
     Ok(hex(&digest.finalize()))
 }
 

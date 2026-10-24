@@ -32,9 +32,10 @@ class GateTests(unittest.TestCase):
             current, baseline, policy = self.fixtures(root)
             baseline.unlink()
             environment = self.bootstrap_environment(root, current)
-            with patch.dict(os.environ, environment), patch.object(gate.subprocess, "check_output", side_effect=["false\n", "a" * 40 + "\n", "a" * 40 + "\n", "", ""]):
+            with patch.dict(os.environ, environment), patch.object(gate.subprocess, "check_output", side_effect=["false\n", "a" * 40 + "\n", "a" * 40 + "\n", "", ""]) as git:
                 decision, status = gate.evaluate(current, policy, public=True, first_public_bootstrap=True)
                 self.assertEqual((decision["mode"], status), ("bootstrap-record-only", 0))
+                self.assertEqual(git.call_args.args[0][-1], ":(glob)bench/baseline/**/*.json")
             self.assertFalse(baseline.exists())
             with patch.dict(os.environ, environment), patch.object(gate.subprocess, "check_output", side_effect=["false\n", "a" * 40 + "\n", "a" * 40 + "\n", "", "b" * 40 + "\n"]):
                 with self.assertRaises(ValueError):

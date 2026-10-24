@@ -55,6 +55,14 @@ class BuildTests(unittest.TestCase):
 
 
 class FunctionalCollectorTests(unittest.TestCase):
+    def test_failure_diagnostics_are_only_allowlisted_phase_and_numbers(self):
+        text = check.diagnostic("collector-execution", 700 * 1024 * 1024, 1)
+        self.assertEqual(json.loads(text.partition(": ")[2]), dict(stage="collector-execution", binary_bytes=700 * 1024 * 1024, exit_status=1))
+        self.assertEqual(json.loads(check.diagnostic("cargo-build", None, None).partition(": ")[2]), dict(stage="cargo-build", binary_bytes=None, exit_status=None))
+        for args in [("synthetic-secret-must-not-escape", None, None), ("cargo-build", "sensitive-argv", None), ("cargo-build", None, "sensitive-output")]:
+            with self.assertRaises(ValueError):
+                check.diagnostic(*args)
+
     def test_test_harness_cannot_impersonate_actual_collector(self):
         with tempfile.TemporaryDirectory() as temporary:
             binary = Path(temporary) / "collector-exact-hash"
@@ -81,6 +89,14 @@ class FunctionalCollectorTests(unittest.TestCase):
 
 
 class KernelTests(unittest.TestCase):
+    def test_tool_failure_classification_never_returns_raw_output(self):
+        for payload, expected in [(b"unexpected argument private-value", "runner-arguments"),
+                                  (b"unrecognised instruction private-value", "unsupported-instruction"),
+                                  (b"panicked with private-value", "benchmark-panic"),
+                                  (b"private-value", "tool-failed")]:
+            self.assertEqual(kernels.failure_category(payload), expected)
+            self.assertNotIn("private-value", kernels.failure_category(payload))
+
     def dumps(self, root):
         paths = []
         for function in kernels.FUNCTIONS.values():
@@ -220,15 +236,75 @@ class CollectionTests(unittest.TestCase):
             event.write_text(json.dumps(dict(pull_request=dict(base=dict(sha="a" * 40)))))
             environment = dict(GITHUB_ACTIONS="true", GITHUB_EVENT_NAME="pull_request", GITHUB_EVENT_PATH=str(event))
             names = "bench/baseline/reviewed.json\n"
-            with patch.dict(os.environ, environment), patch("run.subprocess.check_output", side_effect=[names, '{"reviewed":true}']) as git:
+            baseline = root / "bench/baseline/reviewed.json"
+            baseline.parent.mkdir(parents=True)
+            baseline.write_text('{"reviewed":true}')
+            with patch.dict(os.environ, environment), patch("run.subprocess.check_output", side_effect=[names, "", '{"reviewed":true}']) as git:
                 data, selected = run.reviewed_baseline(root, None)
                 self.assertEqual(data, dict(reviewed=True))
                 self.assertEqual(git.call_args_list[0].args[0][4], "a" * 40)
                 self.assertEqual(selected, root / "bench/baseline/reviewed.json")
             with patch.dict(os.environ, environment), self.assertRaises(ValueError):
                 run.reviewed_baseline(root, root / "unreviewed.json")
+            baseline.unlink()
             with patch.dict(os.environ, environment), patch("run.subprocess.check_output", return_value=""):
                 self.assertEqual(run.reviewed_baseline(root, None), (None, None))
+
+    def test_hosted_pr_cannot_delete_edit_alias_or_add_its_own_ceiling(self):
+        for mutation in ("delete", "edit", "rename", "add", "symlink", "directory-symlink", "create"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                event = root / "event.json"
+                event.write_text(json.dumps(dict(repository=dict(private=False), pull_request=dict(base=dict(sha="a" * 40)))))
+                environment = dict(GITHUB_ACTIONS="true", GITHUB_EVENT_NAME="pull_request", GITHUB_EVENT_PATH=str(event))
+                baseline = root / "bench/baseline/reviewed.json"
+                baseline.parent.mkdir(parents=True)
+                baseline.write_text('{"reviewed":true}')
+                names = "bench/baseline/reviewed.json\n"
+                if mutation == "delete":
+                    baseline.unlink()
+                elif mutation == "edit":
+                    baseline.write_text('{"reviewed":false}')
+                elif mutation == "rename":
+                    baseline.rename(baseline.with_name("renamed.json"))
+                elif mutation == "add":
+                    baseline.with_name("additional.json").write_text('{"reviewed":false}')
+                elif mutation == "symlink":
+                    other = root / "other.json"
+                    other.write_text(baseline.read_text())
+                    baseline.unlink()
+                    baseline.symlink_to(other)
+                elif mutation == "directory-symlink":
+                    other = root / "other-baselines"
+                    baseline.parent.rename(other)
+                    baseline.parent.symlink_to(other, target_is_directory=True)
+                elif mutation == "create":
+                    names = ""
+                with patch.dict(os.environ, environment), patch("run.subprocess.check_output", side_effect=[names, "", '{"reviewed":true}']), self.assertRaises(ValueError):
+                    run.reviewed_baseline(root, None)
+
+    def test_worktree_copy_cannot_hide_a_tracked_baseline_deletion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            baseline = root / "bench/baseline/reviewed.json"
+            baseline.parent.mkdir(parents=True)
+            baseline.write_text('{"reviewed":true}')
+            event = root / "event.json"
+            event.write_text(json.dumps(dict(repository=dict(private=False), pull_request=dict(base=dict(sha="a" * 40)))))
+            environment = dict(GITHUB_ACTIONS="true", GITHUB_EVENT_NAME="pull_request", GITHUB_EVENT_PATH=str(event))
+
+            def git(command, **kwargs):
+                if command[1] == "ls-tree":
+                    return "bench/baseline/reviewed.json\n"
+                if command[1] == "show":
+                    return '{"reviewed":true}'
+                if command[1] == "diff":
+                    self.assertEqual(command[-1], ":(glob)bench/baseline/**/*.json")
+                    return "bench/baseline/reviewed.json\n"
+                self.fail("unexpected baseline provenance command")
+
+            with patch.dict(os.environ, environment), patch("run.subprocess.check_output", side_effect=git), self.assertRaises(ValueError):
+                run.reviewed_baseline(root, None)
 
     def test_multiple_baselines_have_no_silent_fallback(self):
         with tempfile.TemporaryDirectory() as temporary:

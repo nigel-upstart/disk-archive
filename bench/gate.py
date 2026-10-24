@@ -43,7 +43,7 @@ def authorize_first_public_bootstrap(current: dict, *, public: bool, baseline: P
     fingerprint = current["fingerprint"]
     if head != main or dirty.strip() or fingerprint.get("source_commit") != main or fingerprint.get("source_dirty") is not False:
         raise ValueError("bootstrap measurements must come from clean reviewed main")
-    history = subprocess.check_output(["git", "log", "origin/main", "--format=%H", "--", ":(glob)bench/baseline/*.json"], cwd=root, text=True)
+    history = subprocess.check_output(["git", "log", "origin/main", "--format=%H", "--", ":(glob)bench/baseline/**/*.json"], cwd=root, text=True)
     if history.strip():
         raise ValueError("baseline history exists; deletion cannot reenable bootstrap")
 

@@ -40,24 +40,47 @@ def validate(receipt: dict) -> None:
         raise ValueError("complete independent corpus/output/history verification required")
 
 
+def diagnostic(stage: str, binary_bytes: int | None, exit_status: int | None) -> str:
+    """Allowlisted phase/numeric diagnostics only; never exception text, argv or child output."""
+    if stage not in {"fixture", "cargo-build", "artifact-selection", "binary-identity", "collector-execution", "instrumented-execution", "receipt-validation"}:
+        raise ValueError("unknown functional check phase")
+    if binary_bytes is not None:
+        unsigned(binary_bytes)
+    if exit_status is not None and type(exit_status) is not int:
+        raise ValueError("numeric child exit status required")
+    return "Actual collector diagnostic: " + json.dumps(dict(stage=stage, binary_bytes=binary_bytes, exit_status=exit_status), sort_keys=True)
+
+
 def check(*, coverage: bool = False) -> None:
     root = Path(__file__).resolve().parents[1]
-    with tempfile.TemporaryDirectory(prefix="disk-archive-collector-check-") as owned:
-        temporary = Path(owned)
-        inputs, output = temporary / "corpus", temporary / "receipt.json"
-        corpus(inputs)
-        if coverage:
-            # Same actual workspace feature closure as the full coverage test stage.
-            command = ["cargo", "llvm-cov", "run", "--no-report", "--all-features", "--locked", "-p", "disk-archive-benchmarks",
-                       "--bin", "perf-pipeline", "--", "--corpus", str(inputs), "--output", str(output)]
-        else:
-            built = subprocess.run(["cargo", "build", "--workspace", "--all-features", "--locked", "--bins", "--message-format=json"],
-                                   cwd=root, check=True, capture_output=True, text=True, timeout=1200)
-            binary = executable(built.stdout)
-            command = arguments(binary, inputs, output, binary_digest(binary))
-        subprocess.run(command, cwd=root, check=True, timeout=1200, stdin=subprocess.DEVNULL,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        validate(json.loads(output.read_text()))
+    stage, binary_bytes = "fixture", None
+    try:
+        with tempfile.TemporaryDirectory(prefix="disk-archive-collector-check-") as owned:
+            temporary = Path(owned)
+            inputs, output = temporary / "corpus", temporary / "receipt.json"
+            corpus(inputs)
+            if coverage:
+                stage = "instrumented-execution"
+                command = ["cargo", "llvm-cov", "run", "--no-report", "--all-features", "--locked", "-p", "disk-archive-benchmarks",
+                           "--bin", "perf-pipeline", "--", "--corpus", str(inputs), "--output", str(output)]
+            else:
+                stage = "cargo-build"
+                built = subprocess.run(["cargo", "build", "--workspace", "--all-features", "--locked", "--bins", "--message-format=json"],
+                                       cwd=root, check=True, capture_output=True, text=True, timeout=1200)
+                stage = "artifact-selection"
+                binary = executable(built.stdout)
+                binary_bytes = binary.stat().st_size
+                stage = "binary-identity"
+                command = arguments(binary, inputs, output, binary_digest(binary))
+                stage = "collector-execution"
+            subprocess.run(command, cwd=root, check=True, timeout=1200, stdin=subprocess.DEVNULL,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            stage = "receipt-validation"
+            validate(json.loads(output.read_text()))
+    except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as error:
+        status = error.returncode if isinstance(error, subprocess.CalledProcessError) else None
+        print(diagnostic(stage, binary_bytes, status), file=sys.stderr)
+        raise
     print("Actual collector check: 89 verified archives, one encoded source retained, complete HTTP/resource observations")
 
 

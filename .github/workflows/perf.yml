@@ -41,7 +41,8 @@ jobs:
       - name: Fingerprint compiler and native inputs
         id: perf-native
         run: bash scripts/ci-cache-key.sh workspace
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: release-cache
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         with:
           key: perf-v1-${{ runner.os }}-${{ runner.arch }}-release-${{ github.ref }}-${{ steps.perf-native.outputs.digest }}-${{ steps.perf-native.outputs.native }}-${{ hashFiles('Cargo.toml', 'rust-toolchain.toml', '**/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', '.github/workflows/perf.yml') }}-${{ hashFiles('Cargo.lock') }}
@@ -59,6 +60,7 @@ jobs:
             !**/build/**/output
             !**/build/**/stderr
       - name: Compile actual collector and registered component benchmarks
+        id: release-build
         run: python3 -B bench/build.py --receipt target/perf-build.json
       - name: Criterion fixed-buffer microbenchmarks (not end-to-end)
         run: python3 -B bench/build.py --receipt target/perf-build.json --criterion
@@ -71,6 +73,23 @@ jobs:
           args=()
           if [[ "$FIRST_PUBLIC_BOOTSTRAP" == true ]]; then args+=(--first-public-bootstrap); fi
           python3 -B bench/run.py --build target/perf-build.json --kernels target/perf-kernels.json --output target/perf "${args[@]}"
+      # Preserve successfully built native/Rust inputs even if a measurement fails.
+      # Same ref/compiler/native/build keys and trusted-PR restriction as restore;
+      # never cache reports, corpora, traces, profiles or local build-path receipts.
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: always() && steps.release-build.outcome == 'success' && steps.release-cache.outputs.cache-hit != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        with:
+          key: ${{ steps.release-cache.outputs.cache-primary-key }}
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target/release/.fingerprint
+            target/release/build
+            target/release/deps
+            !**/*.log
+            !**/build/**/output
+            !**/build/**/stderr
       - name: Explain failed-closed collection
         if: failure()
         run: echo 'Performance validation failed. Missing observations or baselines are not a passing gate; no baseline was created or raised.' >> "$GITHUB_STEP_SUMMARY"
