@@ -16,7 +16,9 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # Cold native C++/SDK builds plus coverage and real syscall/comparison audits
+    # exceeded 60 minutes; retain every gate and budget the complete cold path.
+    timeout-minutes: 120
     env:
       CARGO_BUILD_JOBS: '4'
       VECTORSCAN_OFFLINE: '1'

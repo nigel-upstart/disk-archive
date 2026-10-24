@@ -232,7 +232,10 @@ fn absent_files_defaults_and_paths() -> TestResult {
     ]);
     let cfg = Config::load(None, &dir.0, &e).map_err(|_| "config")?;
     assert_eq!(cfg.min_age_secs, 30 * 86_400);
-    assert_eq!(cfg.workers, 4);
+    assert_eq!(
+        cfg.workers,
+        std::thread::available_parallelism().map_or(1, |n| n.get().min(256))
+    );
     assert_eq!(
         cfg.roots_all_files,
         vec![dir.0.join("one"), dir.0.join("two")]

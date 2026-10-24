@@ -6,5 +6,40 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[dependencies]
+disk-archive-metrics = { version = "0.1.0", path = "../metrics" }
+disk-archive-scanner = { version = "0.1.0", path = "../scanner" }
+disk-archive-storage = { version = "0.1.0", path = "../storage" }
+disk-archive-core = { version = "0.1.0", path = "../core" }
+disk-archive-verified = { version = "0.1.0", path = "../verified" }
+rusqlite = { version = "0.40.2", default-features = false, features = [
+  "libsqlite3-sys",
+  "bundled",
+] }
+rustix = { version = "1.1.5", features = ["fs", "process"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["raw_value"] }
+sha2 = "0.11.1"
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = [
+  "rt-multi-thread",
+  "macros",
+  "fs",
+  "io-util",
+  "sync",
+  "signal",
+  "time",
+] }
+tokio-util = { version = "0.7.20", features = ["rt"] }
+walkdir = "2.5.0"
+zeroize = "1.9.1"
+
+[dev-dependencies]
+base64 = "0.22.1"
+flate2 = "1.1.10"
+disk-archive-storage = { version = "0.1.0", path = "../storage", features = [
+  "test-support",
+] }
+
 [lints]
 workspace = true

@@ -174,6 +174,48 @@ class CacheKeyTests(unittest.TestCase):
                 self.assertIn("CMakeLists.txt", line)
                 self.assertIn("crates/scanner/Cargo.toml", line)
 
+    def test_sdk_reclamation_is_hosted_linux_only_and_has_fixed_roots(self):
+        script = (ROOT / "scripts/ci-cache-key.sh").read_text()
+        reclaim, separator, _ = script.partition("case ${1:?workspace or fuzz required} in")
+        self.assertTrue(separator)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binary = root / "bin"
+            binary.mkdir()
+            calls = root / "sudo-args"
+            sudo = binary / "sudo"
+            sudo.write_text("#!/bin/sh\nprintf '%s\\n' CALL \"$@\" >> \"$MOCK_SUDO_ARGS\"\n")
+            sudo.chmod(0o700)
+            names = ("GITHUB_ACTIONS", "RUNNER_ENVIRONMENT", "RUNNER_OS")
+            environment = {key: value for key, value in os.environ.items() if key not in names}
+            environment.update(PATH=str(binary) + os.pathsep + os.environ["PATH"],
+                               MOCK_SUDO_ARGS=str(calls))
+            hosted = dict(zip(names, ("true", "github-hosted", "Linux")))
+            invalid = [{}]
+            for name, values in [("GITHUB_ACTIONS", (None, "false", "1")),
+                                 ("RUNNER_ENVIRONMENT", (None, "self-hosted")),
+                                 ("RUNNER_OS", (None, "macOS", "Windows"))]:
+                for value in values:
+                    case = hosted.copy()
+                    if value is None:
+                        del case[name]
+                    else:
+                        case[name] = value
+                    invalid.append(case)
+            for case in invalid:
+                with self.subTest(environment=case):
+                    calls.unlink(missing_ok=True)
+                    subprocess.run(["bash", "-c", reclaim], env={**environment, **case},
+                                   cwd=root, check=True)
+                    self.assertFalse(calls.exists())
+            subprocess.run(["bash", "-c", reclaim], env={**environment, **hosted},
+                           cwd=root, check=True)
+            self.assertTrue(calls.exists())
+            self.assertEqual(calls.read_text().splitlines(), [
+                "CALL", "-n", "rm", "-rf", "--", "/usr/local/lib/android",
+                "/usr/share/dotnet", "/usr/local/.ghcup",
+            ])
+
     def test_dynamic_cpu_fields_do_not_break_safe_cache_reuse(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -197,6 +239,98 @@ class CacheKeyTests(unittest.TestCase):
                 return output.read_text()
             self.assertEqual(digest("1000", "avx2 sse4_2"), digest("3200", "avx2 sse4_2"))
             self.assertNotEqual(digest("1000", "avx2 sse4_2"), digest("1000", "sse4_2"))
+
+
+class AuditBuildTests(unittest.TestCase):
+    GRAPH = ["test", "--workspace", "--all-features", "--locked", "--no-run", "--message-format=json"]
+
+    @staticmethod
+    def artifact(target, executable="/synthetic/custom-target/test-binary", kind="test"):
+        return {"reason": "compiler-artifact", "target": {"name": target, "kind": [kind]},
+                "profile": {"test": kind == "test"}, "executable": executable}
+
+    def scanner_build(self, messages, status=0):
+        # Execute the actual build/selection prefix, never a mocked syscall audit.
+        script, separator, _ = (ROOT / "scripts/scanner-offline.sh").read_text().partition("case $(uname -s) in")
+        self.assertTrue(separator)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binary = root / "bin"
+            binary.mkdir()
+            cargo = binary / "cargo"
+            cargo.write_text("#!/usr/bin/env python3\nimport json, os, pathlib, sys\n"
+                             "pathlib.Path('arguments.json').write_text(json.dumps(sys.argv[1:]))\n"
+                             "print(os.environ['MOCK_MESSAGES'])\n"
+                             "raise SystemExit(int(os.environ['MOCK_STATUS']))\n")
+            cargo.chmod(0o700)
+            (root / "target").mkdir()
+            (root / "target/scanner-test-build.json").write_text(json.dumps(self.artifact("catalog", "/stale")))
+            env = {**os.environ, "PATH": str(binary) + os.pathsep + os.environ["PATH"],
+                   "MOCK_MESSAGES": "\n".join(json.dumps(message) for message in messages),
+                   "MOCK_STATUS": str(status)}
+            result = subprocess.run(["bash", "-c", script + '\nprintf "%s\\n" "$binary"\n'],
+                                    cwd=root, env=env, capture_output=True, text=True)
+            self.assertEqual(json.loads((root / "arguments.json").read_text()), self.GRAPH)
+            return result
+
+    def archiver_run(self, messages, status=0, audit=True):
+        spec = importlib.util.spec_from_file_location("archiver_runner", ROOT / "crates/archiver/tests/run.py")
+        runner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(runner)
+        completed = subprocess.CompletedProcess([], status, "\n".join(json.dumps(message) for message in messages))
+        expected = self.GRAPH if audit else ["build", "-p", "disk-archive", "--bin", "disk-archive", "--locked", "--message-format=json"]
+        with patch.object(runner.sys, "argv", ["run.py", *(["--audit"] if audit else [])]), patch.object(runner.subprocess, "run", return_value=completed) as run:
+            try:
+                runner.main()
+            except RuntimeError:
+                self.assertEqual(run.call_count, 1)  # No audit/CLI launch after a bad build.
+                raise
+            finally:
+                self.assertEqual(run.call_args_list[0].args[0], ["cargo", *expected])
+                self.assertEqual(run.call_args_list[0].kwargs["cwd"], ROOT)
+            calls = run.call_args_list
+        return calls
+
+    def test_scanner_matches_workspace_graph_and_selects_test_executable(self):
+        good = self.artifact("catalog")
+        result = self.scanner_build([{"reason": "build-finished", "success": True},
+                                     self.artifact("unrelated"), self.artifact("catalog", kind="bin"), good])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), good["executable"])
+
+    def test_scanner_rejects_failed_missing_and_ambiguous_builds(self):
+        good = self.artifact("catalog")
+        for messages, status in [([good], 17), ([], 0), ([self.artifact("catalog", kind="bin")], 0),
+                                 ([good, good], 0), ([good, self.artifact("catalog", "/other")], 0),
+                                 ([self.artifact("catalog", None)], 0), ([{**good, "profile": {"test": False}}], 0)]:
+            with self.subTest(messages=messages, status=status):
+                result = self.scanner_build(messages, status)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, "")
+
+    def test_archiver_audit_matches_workspace_graph_and_selects_test_executable(self):
+        good = self.artifact("pipeline")
+        calls = self.archiver_run([self.artifact("other"), self.artifact("pipeline", kind="bin"), good])
+        self.assertEqual(len(calls), 2)
+        self.assertIn("audit_processes.py", calls[1].args[0][2])
+        self.assertEqual(calls[1].args[0][-2:], ["--binary", good["executable"]])
+        self.assertTrue(calls[1].kwargs["check"])
+
+    def test_archiver_rejects_failed_missing_and_ambiguous_builds(self):
+        good = self.artifact("pipeline")
+        for messages, status in [([good], 17), ([], 0), ([self.artifact("pipeline", kind="bin")], 0),
+                                 ([good, good], 0), ([good, self.artifact("pipeline", "/other")], 0),
+                                 ([self.artifact("pipeline", None)], 0), ([{**good, "profile": {"test": False}}], 0)]:
+            with self.subTest(messages=messages, status=status), self.assertRaises(RuntimeError):
+                self.archiver_run(messages, status)
+
+    def test_regular_cli_build_graph_is_preserved(self):
+        good = self.artifact("disk-archive", kind="bin")
+        calls = self.archiver_run([good], audit=False)
+        self.assertEqual(len(calls), 3)
+        self.assertIn("cli.py", calls[1].args[0][2])
+        self.assertEqual(calls[1].args[0][-2:], ["--binary", good["executable"]])
+        self.assertEqual(calls[2].args[0][-1], "--self-test")
 
 
 class QuietTests(unittest.TestCase):

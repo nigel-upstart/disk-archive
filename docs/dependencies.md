@@ -1,6 +1,6 @@
 # Dependency and toolchain policy
 
-**Owner:** Maintainers · **Status:** Active · **Last updated:** 2026-10-21
+**Owner:** Maintainers · **Status:** Active · **Last updated:** 2026-10-23
 **Links:** [crypto/native ADR](adr/006-crypto-provider.md), [scanner ADR](adr/005-scanner.md)
 
 Prefer registry dependencies with a committed lockfile. Git dependencies require a full immutable
@@ -76,6 +76,31 @@ CI installs cargo-fuzz 0.13.2 and nightly-2026-10-20, distinct from the workspac
 and Verus compilers. The explicit comparison tool uses TruffleHog 3.99.2 release
 archives with checked SHA-256 (Linux x86_64/macOS arm64); it is test tooling only,
 not a production dependency, and credential verification/update checks are off.
+
+## SQLite state-writer admission
+
+The async shell uses registry `rusqlite 0.40.2` with defaults disabled and only
+`libsqlite3-sys`/`bundled` enabled. The lockfile admits `libsqlite3-sys 0.38.2`,
+`fallible-iterator 0.3.0`, `fallible-streaming-iterator 0.1.9` and the native build
+helper `vcpkg 0.2.15`; existing registry identities and immutable Git pins remain
+unchanged. Bundled SQLite avoids an ambient system-library version dependency;
+loadable extensions and the default alternate backends are not enabled. One bounded
+blocking writer owns the connection. Re-run license/advisory/feature checks,
+SQLite durability/resume regressions and every workspace SBOM on upgrades. No new
+advisory, license or duplicate-version exception is introduced for this layer.
+
+## October 2026 security patch floor
+
+The archiver and storage require Tokio >=1.54.1 and the workspace lockfile pins
+1.54.1: [RUSTSEC-2026-0384](https://rustsec.org/advisories/RUSTSEC-2026-0384)
+affects 1.54.0's multi-threaded Interval timer with a data race/use-after-free.
+Both workspace and isolated fuzz lockfiles pin ctutils 0.4.4 for
+[RUSTSEC-2026-0385](https://rustsec.org/advisories/RUSTSEC-2026-0385), which fixes
+non-constant-time masks and u128 comparisons. The patched, non-yanked registry
+releases and advisory ranges were checked on 2026-10-23. These are precise
+security updates only; all other registry, immutable Git and vendor identities
+are retained, with no advisory exception. Keep both graphs on patched versions
+and rerun admission, runtime regressions and full gates on future upgrades.
 
 ## Separate compiler and verifier pins
 
