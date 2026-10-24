@@ -77,10 +77,15 @@ remain E's responsibility.
 
 ## Tests
 
-`cargo test -p disk-archive-core --test golden golden_parity` consumes all 16 shared
-synthetic Python fixtures and checks bytes and counts. The Python generator also
-checks timestamp restoration; Rust core does no filesystem rewriting. Generated,
+`cargo test --locked -p disk-archive-core --test golden golden_parity` consumes all 16
+frozen Python-derived fixtures in `fixtures/redactor/` and compares actual Rust output bytes
+and replacement counts. `python3 -B scripts/frozen-oracle.py` checks their pinned integrity,
+schema, count and ordered IDs, not Rust behavior. [Provenance and retirement](../../docs/redaction-oracle.md)
+record the reference revisions/hashes; expectations must never be regenerated from Rust.
+The original sanitized Python check remains until fresh Rust validation permits retirement.
+Its generator also checks timestamp restoration; Rust core does no filesystem rewriting. Generated,
 deterministic property sweeps exercise literal escaping, chunk boundaries, key
 injectivity/round trips, cutoff extremes, budget exhaustion, marker collisions,
 and value-free I/O failures. They are reproducible without ambient input or
-production credentials. Full shell/scanner integration remains G/F work.
+production credentials. These redactor fixtures alone do not establish scanner recall or
+whole-pipeline safety; merged application/scanner tests provide separate evidence.
