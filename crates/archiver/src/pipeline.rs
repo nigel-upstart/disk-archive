@@ -23,6 +23,7 @@ use crate::{
     discovery,
     filesystem::{self, Candidate, Root},
     process::{self, Accepted},
+    profile::{self, Stage},
     state::{Row, Status, Writer},
     work::Work,
 };
@@ -229,6 +230,52 @@ pub async fn run(
         .map_err(|_| Error::Worker)?
 }
 
+/// Run an explicitly selected profiler inside the shielded pipeline owner.
+/// Initialization/export errors never skip any pipeline shutdown barrier.
+///
+/// # Errors
+/// Returns pipeline failures first, or a static profiling error after all work drains.
+#[cfg(feature = "profiling")]
+pub async fn run_profiled(
+    config: Arc<Config>,
+    options: Options,
+    services: Services,
+    cancel: CancellationToken,
+    request: crate::profile::Request,
+) -> Result<Report, Error> {
+    options.validate()?;
+    if services.pool.limit() != options.cpu_jobs {
+        return Err(Error::Configuration);
+    }
+    let child = cancel.child_token();
+    let _cancel_on_drop = child.clone().drop_guard();
+    tokio::spawn(async move {
+        // Capture must start before admitting destructive work. On an initialization
+        // failure drain constructed services, but never acquire source/work ownership.
+        let profile_pool = services.pool.clone();
+        let capture = profile_pool
+            .run(&CancellationToken::new(), move || {
+                crate::profile::Capture::start(request).map_err(|_| Error::Profiling)
+            })
+            .await;
+        let capture = match capture {
+            Ok(capture) => capture,
+            Err(error) => {
+                let _ = services.store.drain().await;
+                let _ = profile_pool.drain().await;
+                return Err(error);
+            }
+        };
+        let result = Box::pin(run_owned(config, options, services, child)).await;
+        let finished = capture.finish(&profile_pool).await;
+        let report = result?;
+        finished.map_err(|_| Error::Profiling)?;
+        Ok(report)
+    })
+    .await
+    .map_err(|_| Error::Worker)?
+}
+
 async fn run_owned(
     config: Arc<Config>,
     options: Options,
@@ -300,12 +347,16 @@ async fn run_owned(
     let cpu_drained = context.pool.drain().await;
     let drained = store_drained.and(cpu_drained);
     let manifest = if result.is_ok() && drained.is_ok() && !cancel.is_cancelled() {
-        let published = crate::manifest::publish(
-            &writer,
-            context.store.as_ref(),
-            &context.pool,
-            &terminal_manifest_key,
-            cancel.clone(),
+        let published = profile::stage(
+            Stage::Manifest,
+            0,
+            crate::manifest::publish(
+                &writer,
+                context.store.as_ref(),
+                &context.pool,
+                &terminal_manifest_key,
+                cancel.clone(),
+            ),
         )
         .await;
         // Manifest uploads happen after the data-plane drain. Drain those requests too, even
@@ -384,18 +435,21 @@ async fn stages(context: Arc<Context>, roots: Vec<Arc<Root>>) -> Result<(), Erro
     let discovery_pool = BlockingPool::new(1)?;
     let discovery = discovery_pool
         .run(&discovery_cancel, move || {
-            let walked = discovery::walk(
-                &roots,
-                &discovery_context.config,
-                discovery_context.options.limit,
-                &discovery_context.cancel,
-                |mut candidate| {
-                    candidate.occupancy = Some(Occupancy::new(discovery_context.counts.clone()));
-                    discovered_tx
-                        .blocking_send(candidate)
-                        .map_err(|_| Error::Worker)
-                },
-            )?;
+            let walked = profile::work(Stage::Discovery, 0, || {
+                discovery::walk(
+                    &roots,
+                    &discovery_context.config,
+                    discovery_context.options.limit,
+                    &discovery_context.cancel,
+                    |mut candidate| {
+                        candidate.occupancy =
+                            Some(Occupancy::new(discovery_context.counts.clone()));
+                        discovered_tx
+                            .blocking_send(candidate)
+                            .map_err(|_| Error::Worker)
+                    },
+                )
+            })?;
             discovery_context.counts.retain(walked.retained)?;
             Ok(())
         })
@@ -494,6 +548,7 @@ async fn scan_worker(
 ) -> Result<(), Error> {
     while let Some(candidate) = receive(&rx).await {
         let _active = context.counts.enter();
+        let file_id = candidate.profile_id;
         let mut row = Row {
             key: candidate.key.clone(),
             path: candidate
@@ -561,9 +616,8 @@ async fn scan_worker(
                 .await?;
             continue;
         }
-        context.writer.update(row.clone()).await?;
-        let scanner = context.scanner.clone();
-        let config = context.config.clone();
+        profile::stage(Stage::State, file_id, context.writer.update(row.clone())).await?;
+        let (scanner, config) = (context.scanner.clone(), context.config.clone());
         let max = context.options.max_file_bytes;
         let cancel = context.cancel.clone();
         let counters = context.counters.clone();
@@ -584,9 +638,9 @@ async fn scan_worker(
             Ok(accepted) => {
                 row.detectors.clone_from(&accepted.detectors);
                 row.advance(Status::Scanned)?;
-                context.writer.update(row.clone()).await?;
+                profile::stage(Stage::State, file_id, context.writer.update(row.clone())).await?;
                 row.advance(Status::Redacted)?;
-                context.writer.update(row.clone()).await?;
+                profile::stage(Stage::State, file_id, context.writer.update(row.clone())).await?;
                 row.advance(Status::Verified)?;
                 tx.send(Scanned::Fresh(Local { accepted, row }))
                     .await
@@ -619,10 +673,17 @@ async fn prepare_worker(
                     detectors: _,
                 } = local.accepted;
                 let row = local.row;
-                let result = context
-                    .preparer
-                    .prepare(source, identity, row.key.clone(), context.cancel.clone())
-                    .await;
+                let result = profile::stage(
+                    Stage::Prepare,
+                    candidate.profile_id,
+                    context.preparer.prepare(
+                        source,
+                        identity,
+                        row.key.clone(),
+                        context.cancel.clone(),
+                    ),
+                )
+                .await;
                 match result {
                     Ok(prepared) => {
                         let (row, prepared) = context.durable_prepared(row, prepared).await?;
@@ -646,10 +707,14 @@ async fn prepare_resume(
     row: Row,
     expected: ExpectedUpload,
 ) -> Result<Option<Ready>, Error> {
-    match context
-        .store
-        .verify_existing(&expected, context.cancel.clone())
-        .await
+    match profile::stage(
+        Stage::Verify,
+        candidate.profile_id,
+        context
+            .store
+            .verify_existing(&expected, context.cancel.clone()),
+    )
+    .await
     {
         Ok(token) => return Ok(Some(Ready::Verified(candidate, row, token))),
         Err(StoreError::NotFound | StoreError::Integrity) => {}
@@ -671,15 +736,17 @@ async fn prepare_resume(
             return Ok(None);
         }
     };
-    match context
-        .preparer
-        .prepare(
+    match profile::stage(
+        Stage::Prepare,
+        candidate.profile_id,
+        context.preparer.prepare(
             source,
             expected.source,
             row.key.clone(),
             context.cancel.clone(),
-        )
-        .await
+        ),
+    )
+    .await
     {
         Ok(prepared) => {
             let (row, prepared) = context.durable_prepared(row, prepared).await?;
@@ -701,10 +768,14 @@ async fn upload_worker(
         let _active = context.counts.enter();
         let (candidate, mut row, result) = match ready {
             Ready::Fresh(candidate, row, prepared) => {
-                let token = context
-                    .store
-                    .put_object_verified(&prepared, context.cancel.clone())
-                    .await;
+                let token = profile::stage(
+                    Stage::Upload,
+                    candidate.profile_id,
+                    context
+                        .store
+                        .put_object_verified(&prepared, context.cancel.clone()),
+                )
+                .await;
                 (candidate, row, token)
             }
             Ready::Verified(candidate, row, token) => (candidate, row, Ok(token)),
@@ -712,7 +783,12 @@ async fn upload_worker(
         match result {
             Ok(token) => {
                 row.advance(Status::Uploaded)?;
-                context.writer.durable(row.clone()).await?;
+                profile::stage(
+                    Stage::State,
+                    candidate.profile_id,
+                    context.writer.durable(row.clone()),
+                )
+                .await?;
                 tx.send(Uploaded {
                     candidate,
                     row,
@@ -737,16 +813,19 @@ async fn delete_worker(context: Arc<Context>, rx: Receiver<Uploaded>) -> Result<
         let _active = context.counts.enter();
         let cancel = context.cancel.clone();
         let max = context.options.max_file_bytes;
+        let file_id = candidate.profile_id;
         let result = context
             .pool
             .run(&context.cancel, move || {
-                crate::delete::delete(&candidate, token, max, &cancel)
+                profile::work(Stage::Delete, candidate.profile_id, || {
+                    crate::delete::delete(&candidate, token, max, &cancel)
+                })
             })
             .await;
         match result {
             Ok(()) => {
                 row.advance(Status::Deleted)?;
-                context.writer.durable(row).await?;
+                profile::stage(Stage::State, file_id, context.writer.durable(row)).await?;
                 context.counts.deleted.fetch_add(1, Ordering::SeqCst);
             }
             Err(error) => context.fail(row, error).await?,

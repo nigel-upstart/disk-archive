@@ -47,6 +47,14 @@ See [`legacy/python/README.md`](legacy/python/README.md) for reference provenanc
 limitations, fixtures, and the optional pytest command. No AWS calls or production
 files are involved in the parity check.
 
+## Optional profiling
+
+[The profiling guide](docs/profiling.md) describes opt-in synthetic trace, heap, console and CPU
+workflows. Trace JSON opens in Perfetto/Chrome, DHAT JSON in `dh_view.html`, macOS CPU JSON in
+samply, and Linux flamegraphs as SVG. The default build has no exporters or profiling resources.
+The opt-in tasks use the real native pipeline with synthetic roots and localhost S3 only.
+End-to-end profile validation is pending; never use production roots.
+
 ## License
 
 [MIT](LICENSE).

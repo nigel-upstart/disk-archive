@@ -110,6 +110,7 @@ impl Root {
 
 /// Validated source candidate with discovery metadata, not deletion authority.
 pub struct Candidate {
+    pub(crate) profile_id: u64,
     pub(crate) occupancy: Option<crate::pipeline::Occupancy>,
     /// Root lock/descriptor lifetime extends to final unlink.
     pub root: Arc<Root>,

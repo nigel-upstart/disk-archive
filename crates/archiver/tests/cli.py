@@ -11,6 +11,7 @@ import unittest
 
 
 BINARY = None
+PROFILING = False
 
 
 class CliTests(unittest.TestCase):
@@ -127,6 +128,33 @@ class CliTests(unittest.TestCase):
         self.assertFalse(self.work.exists())
         self.assertEqual(set(self.root.iterdir()), {self.source})
 
+    def test_profiling_dry_run_never_initializes_exporters_or_providers(self):
+        if not PROFILING:
+            # Default binary must reject profiling options, without mutable setup.
+            self.assert_static_failure(self.run_cli("--dry-run", "--profile-trace", "unused"))
+            return
+        credentials = self.base / "credentials"
+        credentials.write_bytes(b"not a credential file, must never be read")
+        time.sleep(0.25)
+        os.utime(credentials, ns=(1_000_000_000, 2_000_000_000))
+        self.env.update({"AWS_SHARED_CREDENTIALS_FILE": str(credentials),
+                         "AWS_CONFIG_FILE": str(credentials), "AWS_PROFILE": "must-not-load",
+                         "AWS_EC2_METADATA_DISABLED": "false", "RUST_LOG": "trace"})
+        before = credentials.stat()
+        directory_entries = set(self.base.iterdir())
+        for args in [("--profile-trace", str(self.base / "trace.json")),
+                     ("--profile-heap", str(self.base / "heap.json")),
+                     ("--profile-console",)]:
+            result = self.run_cli("--dry-run", *args)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stderr, "")
+            self.assertFalse(self.work.exists())
+            self.assertEqual(set(self.base.iterdir()), directory_entries)
+            self.assertEqual(set(self.root.iterdir()), {self.source})
+        after = credentials.stat()
+        self.assertEqual((before.st_atime_ns, before.st_mtime_ns, before.st_ctime_ns),
+                         (after.st_atime_ns, after.st_mtime_ns, after.st_ctime_ns))
+
     def test_help_does_not_load_configuration(self):
         self.env = {"PATH": os.defpath, "HOME": str(self.base)}
         result = self.run_cli("--help", "--env-file", str(self.base / "missing"))
@@ -137,10 +165,13 @@ class CliTests(unittest.TestCase):
 
 
 def main():
-    global BINARY
+    global BINARY, PROFILING
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", required=True, type=pathlib.Path)
-    BINARY = parser.parse_args().binary.resolve(strict=True)
+    parser.add_argument("--profiling", action="store_true")
+    args = parser.parse_args()
+    BINARY = args.binary.resolve(strict=True)
+    PROFILING = args.profiling
     result = unittest.TextTestRunner().run(unittest.defaultTestLoader.loadTestsFromTestCase(CliTests))
     return 0 if result.wasSuccessful() else 1
 

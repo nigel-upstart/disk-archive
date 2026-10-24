@@ -1,0 +1,8 @@
+id: profiling-skip-all
+valid:
+  - "#[tracing::instrument(skip_all, fields(file_id = 1))] async fn f(input: String) {}"
+  - "#[cfg_attr(feature = \"profiling\", tracing::instrument(skip_all))] async fn f(input: String) {}"
+invalid:
+  - "#[tracing::instrument] async fn f(input: String) {}"
+  - "#[tracing::instrument(fields(file_id = 1))] async fn f(input: String) {}"
+  - "#[cfg_attr(feature = \"profiling\", tracing::instrument(skip(input)))] async fn f(input: String, other: String) {}"

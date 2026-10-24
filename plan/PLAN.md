@@ -105,7 +105,7 @@ parentheses). Use the `anthropic/` and `openai-codex/` providers, not Bedrock, f
 | --- | --- | --- | --- | --- | --- | --- |
 | 3 | I | Perf harness: seeded corpus generator, criterion + gungraun benches, deterministic counters, statistical gate logic, record-only `perf` job | #7 (part) | terminal_heavy_implementation | `openai-codex/gpt-6.1-sol` @ high (`anthropic/claude-opus-5-5` @ high) | todo |
 | 4 | R | Independent read-only review, from a different vendor, of the delete-safety, redaction, and cancellation rules across the data plane; findings posted to the open PRs or new issues | — | code_review | `openai-codex/gpt-6-astra` @ high (`gpt-6.1-sol` @ medium) | todo |
-| 4 | J | Optional `profiling` feature and `task profile:*` targets | #8 | deliberate_tool_workflow | `openai-codex/gpt-6.1-sol` @ medium (`gpt-5.6-terra` @ high) | todo |
+| 4 | J | Optional `profiling` feature and `task profile:*` targets | #8 | deliberate_tool_workflow | `openai-codex/gpt-6.1-sol` @ medium (`gpt-5.6-terra` @ high) | integrated source; actual artifacts/full gates/review pending |
 | 4 | K | README usage, migration notes (old and new key layouts), final `AGENTS.md`, remove `legacy/python/` once parity is proven, remove `plan/` items that are done | — | deliberate_tool_workflow | `openai-codex/gpt-6.1-sol` @ medium (`gpt-5.6-terra` @ high) | todo |
 | 5 | Z | Pre-publish audit (read-only): gitleaks + trufflehog over the **entire history**, a history search for every local `.env` value and for account IDs and emails, commit-author check, confirmation that no state DBs, logs, archives, or `.env` files were ever committed, review of repo settings | — | highest_risk_advisory | `anthropic/claude-opus-5-5` @ max (`gpt-6-astra` @ high → `gpt-6.1-sol` @ max) | todo |
 

@@ -950,6 +950,106 @@ async fn transient_resume_head_is_not_absence_and_changed_source_keeps_intent()
     Ok(())
 }
 
+#[cfg(feature = "profiling")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn profiler_initialization_failure_drains_services_without_admitting_mutation()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = Fixture::new(1)?;
+    let output = fixture.base.join("existing-profile");
+    tokio::fs::write(&output, b"do not overwrite").await?;
+    let store = Arc::new(fixture.store());
+    let services = fixture.services(store.clone(), Arc::new(SyntheticScanner))?;
+    let counters = services.counters.clone();
+    let result = pipeline::run_profiled(
+        Arc::new(fixture.config()?),
+        options(),
+        services,
+        CancellationToken::new(),
+        disk_archive::profile::Request::Trace(output.clone()),
+    )
+    .await;
+    assert!(matches!(result, Err(Error::Profiling)));
+    assert_eq!(fixture.remaining()?, 1);
+    assert!(tokio::fs::metadata(&fixture.work).await.is_err());
+    assert_eq!(store.puts.load(Ordering::SeqCst), 0);
+    assert_eq!(store.drains.load(Ordering::SeqCst), 1);
+    assert!(counters.snapshot().is_ok());
+    assert_eq!(tokio::fs::read(output).await?, b"do not overwrite");
+    Ok(())
+}
+
+#[cfg(feature = "profiling")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn profiled_waiter_drop_preserves_capture_until_ownership_and_bodies_drain()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = Fixture::new(1)?;
+    let output = fixture.base.join("trace.json");
+    let mut delayed = fixture.store();
+    delayed.delay = Duration::from_millis(200);
+    let store = Arc::new(delayed);
+    let services = fixture.services(store.clone(), Arc::new(SyntheticScanner))?;
+    let counters = services.counters.clone();
+    let waiter = tokio::spawn(pipeline::run_profiled(
+        Arc::new(fixture.config()?),
+        options(),
+        services,
+        CancellationToken::new(),
+        disk_archive::profile::Request::Trace(output.clone()),
+    ));
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while store.started.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await?;
+    assert_eq!(tokio::fs::metadata(&output).await?.len(), 0);
+    waiter.abort();
+    let _ = waiter.await;
+    assert!(counters.snapshot().is_err());
+    let pool = BlockingPool::new(1)?;
+    let work = fixture.work.clone();
+    assert!(matches!(
+        pool.run(&CancellationToken::new(), move || {
+            disk_archive::work::Work::acquire(&work)
+        })
+        .await,
+        Err(Error::Locked)
+    ));
+    // The trace is finalized after ownership is released and is written
+    // incrementally, so a non-empty file can still be partial. Wait until the
+    // detached finish has produced a complete JSON artifact.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if tokio::fs::read(&output)
+                .await
+                .is_ok_and(|bytes| serde_json::from_slice::<Vec<serde_json::Value>>(&bytes).is_ok())
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await?;
+    assert_eq!(store.drains.load(Ordering::SeqCst), 1);
+    assert!(counters.snapshot().is_ok());
+    let work = fixture.work.clone();
+    drop(
+        pool.run(&CancellationToken::new(), move || {
+            disk_archive::work::Work::acquire(&work)
+        })
+        .await?,
+    );
+    assert_eq!(fixture.remaining()?, 1);
+    let bytes = tokio::fs::read(output).await?;
+    let events: Vec<serde_json::Value> = serde_json::from_slice(&bytes)?;
+    assert!(events.iter().any(|e| e["name"] == "upload"));
+    assert!(!String::from_utf8_lossy(&bytes).contains("synthetic-secret-value"));
+    assert!(
+        !String::from_utf8_lossy(&bytes).contains(&fixture.base.to_string_lossy().into_owned())
+    );
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn dropped_waiter_keeps_ownership_until_shielded_flush_and_drain()
 -> Result<(), Box<dyn std::error::Error>> {

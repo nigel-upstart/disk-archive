@@ -24,6 +24,8 @@ pub struct Arguments {
     pub env_file: Option<PathBuf>,
     /// Print usage without loading configuration.
     pub help: bool,
+    /// Optional diagnostics; parsed without initialization and ignored by dry-run.
+    pub profile: Option<crate::profile::Request>,
 }
 
 impl Arguments {
@@ -55,6 +57,24 @@ impl Arguments {
                     }
                     result.env_file = Some(value.into());
                 }
+                #[cfg(feature = "profiling")]
+                "--profile-trace" => {
+                    select_profile(
+                        &mut result,
+                        crate::profile::Request::Trace(profile_path(args.next())?),
+                    )?;
+                }
+                #[cfg(feature = "profiling-heap")]
+                "--profile-heap" => {
+                    select_profile(
+                        &mut result,
+                        crate::profile::Request::Heap(profile_path(args.next())?),
+                    )?;
+                }
+                #[cfg(feature = "profiling-console")]
+                "--profile-console" => {
+                    select_profile(&mut result, crate::profile::Request::Console)?;
+                }
                 "--limit" => result.limit = Some(number(args.next(), 0, usize::MAX)?),
                 "--workers" => result.workers = Some(number(args.next(), 1, 256)?),
                 "--blocking-threads" => {
@@ -66,6 +86,24 @@ impl Arguments {
         }
         Ok(result)
     }
+}
+
+#[cfg(feature = "profiling")]
+fn select_profile(result: &mut Arguments, request: crate::profile::Request) -> Result<(), Error> {
+    if result.profile.is_some() {
+        return Err(Error::Configuration);
+    }
+    result.profile = Some(request);
+    Ok(())
+}
+
+#[cfg(feature = "profiling")]
+fn profile_path(value: Option<OsString>) -> Result<PathBuf, Error> {
+    let value = value.ok_or(Error::Configuration)?;
+    if value.is_empty() || value.as_encoded_bytes().starts_with(b"-") {
+        return Err(Error::Configuration);
+    }
+    Ok(value.into())
 }
 
 fn number(value: Option<OsString>, min: usize, max: usize) -> Result<usize, Error> {

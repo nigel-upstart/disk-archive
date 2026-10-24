@@ -1,0 +1,12 @@
+id: profiling-skip-all
+language: Rust
+severity: error
+message: Instrumentation must skip all arguments and explicitly select only safe fields.
+files:
+  - "crates/**/*.rs"
+rule:
+  all:
+    - kind: attribute_item
+    - regex: '\binstrument\b'
+    - not:
+        regex: '\bskip_all\b'

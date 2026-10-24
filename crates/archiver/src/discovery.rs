@@ -234,6 +234,10 @@ pub fn walk(
                 continue;
             }
             send(Candidate {
+                profile_id: u64::try_from(selected)
+                    .map_err(|_| Error::Budget)?
+                    .checked_add(1)
+                    .ok_or(Error::Budget)?,
                 occupancy: None,
                 root: root.clone(),
                 relative,

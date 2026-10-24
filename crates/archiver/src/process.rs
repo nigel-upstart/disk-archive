@@ -23,6 +23,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     Error, discovery,
     filesystem::{self, Candidate},
+    profile::{self, Stage},
 };
 
 /// Verified local input to compression; source descriptor and evidence bind the same inode.
@@ -73,31 +74,37 @@ pub fn process(
     snapshot.rewind().map_err(|_| Error::Io)?;
     let mut builder = PlanBuilder::new(limits).map_err(|_| Error::Blocked)?;
     let mut detectors = BTreeMap::<String, u64>::new();
-    scanner::scan(scanner, Cancellable(&mut snapshot, cancel), |finding| {
-        builder
-            .push(&FindingRaw {
-                label: finding.label,
-                raw: finding.raw,
-            })
-            .map_err(|_| Error::Budget)?;
-        let count = detectors.entry(finding.rule_id.to_owned()).or_default();
-        *count = count.checked_add(1).ok_or(Error::Budget)?;
-        Ok(())
+    profile::work(Stage::Scan, candidate.profile_id, || {
+        scanner::scan(scanner, Cancellable(&mut snapshot, cancel), |finding| {
+            builder
+                .push(&FindingRaw {
+                    label: finding.label,
+                    raw: finding.raw,
+                })
+                .map_err(|_| Error::Budget)?;
+            let count = detectors.entry(finding.rule_id.to_owned()).or_default();
+            *count = count.checked_add(1).ok_or(Error::Budget)?;
+            Ok(())
+        })
     })
     .map_err(|_| Error::Blocked)?;
     let plan = builder.finish([]).map_err(|_| Error::Blocked)?;
     snapshot.rewind().map_err(|_| Error::Io)?;
     let mut output = TemporaryFile::new(work_dir, counters)?;
-    plan.redact(
-        Cancellable(&mut snapshot, cancel),
-        BoundedOutput::new(&mut output, max_bytes),
-    )
+    profile::work(Stage::Redact, candidate.profile_id, || {
+        plan.redact(
+            Cancellable(&mut snapshot, cancel),
+            BoundedOutput::new(&mut output, max_bytes),
+        )
+    })
     .map_err(|_| Error::Blocked)?;
     drop(plan);
     drop(snapshot);
-    let mut output = verify_output(
-        output, scanner, limits, work_dir, max_bytes, cancel, counters,
-    )?;
+    let mut output = profile::work(Stage::Verify, candidate.profile_id, || {
+        verify_output(
+            output, scanner, limits, work_dir, max_bytes, cancel, counters,
+        )
+    })?;
     check_cancel(cancel)?;
     // Do not change a source already represented by durable resume evidence when bytes agree.
     let final_hash = filesystem::content_hash(&mut output.file, max_bytes)?;

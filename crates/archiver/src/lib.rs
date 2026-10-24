@@ -12,6 +12,7 @@ pub mod filesystem;
 pub mod manifest;
 pub mod pipeline;
 pub mod process;
+pub mod profile;
 pub mod scanner;
 pub mod state;
 pub mod work;
@@ -37,6 +38,8 @@ pub enum Error {
     Blocked,
     /// Remote verification or transport failed.
     Store,
+    /// Optional capture failed; pipeline cleanup completed before reporting it.
+    Profiling,
 }
 
 impl std::fmt::Display for Error {

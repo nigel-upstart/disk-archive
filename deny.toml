@@ -47,6 +47,8 @@ multiple-versions = "deny"
 wildcards = "deny"
 # Add only explicitly reviewed duplicate versions, with an explanation and issue.
 skip = [
+  { crate = "miniz_oxide@0.8.9", reason = "Owner: maintainer; #8; expires 2026-11-21; optional DHAT backtrace/object API vs current gzip compression API" },
+  { crate = "rustc-hash@1.1.0", reason = "Owner: maintainer; #8; expires 2026-11-21; optional DHAT 0.3.3 hash-map API vs native catalog rustc-hash 2 API" },
   { crate = "untrusted@0.7.1", reason = "Owner: maintainer; #17; expires 2026-11-21; Kingfisher aws-lc-rs parser API vs SDK rustls-webpki parser API" },
   { crate = "base64@0.22.1", reason = "Owner: maintainer; #17; expires 2026-11-21; tiktoken build API vs catalog/pem API" },
   { crate = "block-buffer@0.10.4", reason = "Owner: maintainer; #17; expires 2026-11-21; gix/native digest vs catalog digest" },

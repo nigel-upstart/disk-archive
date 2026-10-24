@@ -23,6 +23,8 @@ test)
 	cargo test --workspace --doc --all-features --locked
 	python3 -B -m unittest discover -s scripts/tests -v
 	python3 -B crates/archiver/tests/run.py
+	python3 -B crates/archiver/tests/run.py --profiling
+	python3 scripts/profile-default.py
 	;;
 coverage)
 	cargo llvm-cov --workspace --all-features --locked --fail-under-lines 90 --ignore-filename-regex 'crates/archiver/src/main.rs' --lcov --output-path target/coverage.lcov

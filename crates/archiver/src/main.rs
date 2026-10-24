@@ -9,7 +9,7 @@ use disk_archive::{
     blocking::BlockingPool,
     cli::{Arguments, USAGE},
     discovery,
-    pipeline::{self, Options, Report, Services},
+    pipeline::{Options, Report, Services},
 };
 use disk_archive_core::config::{Config, Environment};
 use disk_archive_metrics::Counters;
@@ -72,7 +72,7 @@ fn entry() -> Result<(), Error> {
         .enable_all()
         .build()
         .map_err(|_| Error::Worker)?;
-    let report = runtime.block_on(execute(config, options))?;
+    let report = runtime.block_on(execute(config, options, arguments.profile))?;
     if report.cancelled {
         return Err(Error::Cancelled);
     }
@@ -86,7 +86,11 @@ fn entry() -> Result<(), Error> {
     .map_err(|_| Error::Io)
 }
 
-async fn execute(config: Arc<Config>, options: Options) -> Result<Report, Error> {
+async fn execute(
+    config: Arc<Config>,
+    options: Options,
+    profile: Option<disk_archive::profile::Request>,
+) -> Result<Report, Error> {
     let cancel = CancellationToken::new();
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
         .map_err(|_| Error::Worker)?;
@@ -97,7 +101,7 @@ async fn execute(config: Arc<Config>, options: Options) -> Result<Report, Error>
         tokio::select! { _ = interrupt.recv() => {}, _ = terminate.recv() => {} }
         signal_cancel.cancel();
     });
-    let result = Box::pin(execute_with_cancel(config, options, cancel)).await;
+    let result = Box::pin(execute_with_cancel(config, options, cancel, profile)).await;
     signals.abort();
     let _ = signals.await;
     result
@@ -107,6 +111,7 @@ async fn execute_with_cancel(
     config: Arc<Config>,
     options: Options,
     cancel: CancellationToken,
+    profile: Option<disk_archive::profile::Request>,
 ) -> Result<Report, Error> {
     let pool = BlockingPool::new(options.cpu_jobs)?;
     let scanner = pool
@@ -166,7 +171,7 @@ async fn execute_with_cancel(
         storage_pool,
     )
     .map_err(|_| Error::Configuration)?;
-    pipeline::run(
+    disk_archive::profile::run(
         config,
         options,
         Services {
@@ -177,6 +182,7 @@ async fn execute_with_cancel(
             counters: Arc::new(Counters::default()),
         },
         cancel,
+        profile,
     )
     .await
 }

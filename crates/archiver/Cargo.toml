@@ -6,7 +6,14 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+profiling = ["dep:disk-archive-profiling", "disk-archive-profiling/profiling"]
+profiling-heap = ["profiling", "disk-archive-profiling/heap"]
+profiling-console = ["profiling", "disk-archive-profiling/console"]
+
 [dependencies]
+disk-archive-profiling = { version = "0.1.0", path = "../profiling", optional = true }
 disk-archive-metrics = { version = "0.1.0", path = "../metrics" }
 disk-archive-scanner = { version = "0.1.0", path = "../scanner" }
 disk-archive-storage = { version = "0.1.0", path = "../storage" }
@@ -40,6 +47,10 @@ flate2 = "1.1.10"
 disk-archive-storage = { version = "0.1.0", path = "../storage", features = [
   "test-support",
 ] }
+
+[[example]]
+name = "profile-corpus"
+required-features = ["profiling"]
 
 [lints]
 workspace = true

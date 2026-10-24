@@ -37,6 +37,8 @@ def executable(arguments, target, kind="bin"):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--audit", action="store_true")
+    parser.add_argument("--profiling", action="store_true")
+    parser.add_argument("--dry-run-audit", action="store_true")
     args = parser.parse_args()
     if args.audit:
         # Reuse task check's workspace/all-features graph, not a narrower SDK/native build.
@@ -44,11 +46,17 @@ def main():
         subprocess.run([sys.executable, "-B", str(TESTS / "audit_processes.py"),
                         "--binary", binary], cwd=ROOT, check=True)
     else:
-        binary = executable(["build", "-p", "disk-archive", "--bin", "disk-archive", "--locked"], "disk-archive")
+        features = ["--all-features"] if args.profiling else []
+        binary = executable(["build", "-p", "disk-archive", "--bin", "disk-archive", "--locked", *features], "disk-archive")
         subprocess.run([sys.executable, "-B", str(TESTS / "cli.py"),
-                        "--binary", binary], cwd=ROOT, check=True)
+                        "--binary", binary, *(["--profiling"] if args.profiling else [])], cwd=ROOT, check=True)
         subprocess.run([sys.executable, "-B", str(TESTS / "audit_processes.py"),
                         "--self-test"], cwd=ROOT, check=True)
+        if args.dry_run_audit:
+            if not args.profiling:
+                raise ValueError("dry-run audit requires all profiling features")
+            subprocess.run([sys.executable, "-B", str(ROOT / "scripts/profile-dry-run.py"),
+                            "--binary", binary], cwd=ROOT, check=True)
     return 0
 
 
