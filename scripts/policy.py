@@ -19,7 +19,7 @@ MAX_FILE_BYTES = 1024 * 1024
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TM_SOURCE = "https://github.com/awslabs/aws-s3-transfer-manager-rs"
 TM_REVISION = "dc391970cd36e0d6d6ed044dcb3351b26131e9be"
-TM_RECEIPT_SHA256 = "6f80f3b928a2d909c8c2b012920c141961bece253f8449b99e65625d50d21a00"
+TM_RECEIPT_SHA256 = "b787c78c051bf52ef2a1f17d46f16e8c543483a62ce32782441b51408e022fcf"
 DNS_RECEIPT_SHA256 = "2d33d7d4d75a74834fc1fca952481fffffbe50f81dd955ec3f5ef9295322e219"
 DNS_PATCHES = {"aws-smithy-dns": "vendor/aws-smithy-dns"}
 TM_PATCHES = {
@@ -209,6 +209,9 @@ def check_vendor(root: pathlib.Path = ROOT) -> None:
         raise ValueError("upstream workspace manifest provenance mismatch")
     patched = original.decode().replace('    "benches",\n', '').replace('    "integration-tests"\n', '')
     patched = patched.replace('aws-config = "1.12.0"', 'aws-config = { version = "1.12.0", default-features = false, features = ["default-https-client", "rt-tokio", "sso"] }')
+    # RUSTSEC-2026-0387: SigV4A (multi-region access points) is unused and is the
+    # only path to vulnerable crypto-bigint 0.5/0.7 via aws-sigv4/p256/ecdsa.
+    patched = patched.replace('"rt-tokio", "sigv4a"] }', '"rt-tokio"] }')
     if (vendor / "Cargo.toml").read_bytes() != patched.encode():
         raise ValueError("unapproved transfer-manager manifest patch")
     if hashlib.sha256(patched.encode()).hexdigest() != receipt["patched_workspace_sha256"]:

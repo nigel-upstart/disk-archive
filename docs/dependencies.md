@@ -102,6 +102,16 @@ security updates only; all other registry, immutable Git and vendor identities
 are retained, with no advisory exception. Keep both graphs on patched versions
 and rerun admission, runtime regressions and full gates on future upgrades.
 
+[RUSTSEC-2026-0387](https://rustsec.org/advisories/RUSTSEC-2026-0387) (crypto-bigint
+<0.7.6 timing variability) reached the graph only through `aws-sigv4`'s optional
+SigV4A signer (`p256`/`ecdsa`, plus a direct crypto-bigint 0.5 dependency with no
+patched 0.5 release; aws-sigv4 1.6.3 still requires it). The vendored transfer-manager
+workspace manifest enabled `aws-sdk-s3/sigv4a`; the archiver never uses SigV4A
+(multi-region access points). The admitted manifest patch now also removes that
+feature (`scripts/policy.py` and `vendor/transfer-manager/provenance.json`), so the
+SigV4A crypto stack is absent from the lockfile. No advisory exception is added.
+Re-enabling SigV4A requires a patched signer stack first.
+
 ## Separate compiler and verifier pins
 
 The workspace stable pin belongs to the normal build. `tools/verus.env` pins Verus
