@@ -1015,11 +1015,14 @@ async fn profiled_waiter_drop_preserves_capture_until_ownership_and_bodies_drain
         .await,
         Err(Error::Locked)
     ));
+    // The trace is finalized after ownership is released and is written
+    // incrementally, so a non-empty file can still be partial. Wait until the
+    // detached finish has produced a complete JSON artifact.
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
-            if tokio::fs::metadata(&output)
+            if tokio::fs::read(&output)
                 .await
-                .is_ok_and(|m| m.len() > 0)
+                .is_ok_and(|bytes| serde_json::from_slice::<Vec<serde_json::Value>>(&bytes).is_ok())
             {
                 break;
             }
