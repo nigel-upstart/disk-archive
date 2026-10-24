@@ -39,7 +39,10 @@ description = "Invented non-credential fixture; exact match and path only"
 condition = "AND"
 targetRules = ["private-key"]
 regexTarget = "match"
-paths = ['''^legacy/python/fixtures/redactor/cases\.json$''']
+paths = [
+  '''^legacy/python/fixtures/redactor/cases\.json$''',
+  '''^fixtures/redactor/cases\.json$''',
+]
 regexes = [
   '''^-----BEGIN PRIVATE KEY-----\\nsynthetic-body\\n-----END PRIVATE KEY-----","keep":true\}\n",\n      "findings": \[\],\n      "drop_lines": \[\]\n    \},\n    \{\n      "id": "multiline-pem",\n      "input_hex": "before -----BEGIN RSA PRIVATE KEY-----$''',
 ]
@@ -49,7 +52,10 @@ description = "Invented non-credential fixture; exact match and path only"
 condition = "AND"
 targetRules = ["private-key"]
 regexTarget = "match"
-paths = ['''^legacy/python/fixtures/redactor/cases\.json$''']
+paths = [
+  '''^legacy/python/fixtures/redactor/cases\.json$''',
+  '''^fixtures/redactor/cases\.json$''',
+]
 regexes = [
   '''^-----BEGIN PRIVATE KEY-----\nsynthetic-body\nno terminator\n",\n      "findings": \[\],\n      "drop_lines": \[\]\n    \},\n    \{\n      "id": "drop-lines",\n      "input_hex": "keep\nsynthetic line to drop\nlast\n",\n      "findings": \[\],\n      "drop_lines": \[\n        2\n      \]\n    \},\n    \{\n      "id": "drop-precedes-pem",\n      "input_hex": "-----BEGIN PRIVATE KEY-----$''',
 ]
