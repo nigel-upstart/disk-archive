@@ -46,6 +46,9 @@ Explicit CLI selections are `--profile-trace PATH` (`profiling`), `--profile-hea
 (`profiling-heap`) and `--profile-console` (`profiling-console`, explicit `tokio_unstable`).
 Only one selection is accepted. No profiling environment filter or automatic output directory
 is used by the application. Dry-run parses these options but never initializes their resources.
+A capture initialization failure drains constructed services and returns before source/work
+ownership or destructive work begins. An export failure after work starts is reported only after
+all pipeline shutdown barriers; it does not unwind ownership during an in-flight upload.
 
 ## Reading artifacts
 

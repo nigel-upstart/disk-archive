@@ -952,7 +952,7 @@ async fn transient_resume_head_is_not_absence_and_changed_source_keeps_intent()
 
 #[cfg(feature = "profiling")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn profiler_initialization_failure_is_reported_only_after_pipeline_drain()
+async fn profiler_initialization_failure_drains_services_without_admitting_mutation()
 -> Result<(), Box<dyn std::error::Error>> {
     let fixture = Fixture::new(1)?;
     let output = fixture.base.join("existing-profile");
@@ -969,8 +969,10 @@ async fn profiler_initialization_failure_is_reported_only_after_pipeline_drain()
     )
     .await;
     assert!(matches!(result, Err(Error::Profiling)));
-    assert_eq!(fixture.remaining()?, 0);
-    assert_eq!(store.drains.load(Ordering::SeqCst), 2);
+    assert_eq!(fixture.remaining()?, 1);
+    assert!(tokio::fs::metadata(&fixture.work).await.is_err());
+    assert_eq!(store.puts.load(Ordering::SeqCst), 0);
+    assert_eq!(store.drains.load(Ordering::SeqCst), 1);
     assert!(counters.snapshot().is_ok());
     assert_eq!(tokio::fs::read(output).await?, b"do not overwrite");
     Ok(())

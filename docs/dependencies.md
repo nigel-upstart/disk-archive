@@ -56,7 +56,12 @@ exclude all exporters, subscribers and DHAT. The helper itself has zero default 
 Console defaults/environment filtering and tracing-subscriber formatting/environment features
 are disabled at direct declarations; no runtime environment filter is installed even if a
 transitive crate unifies those capabilities. Console enables Tokio's tracing only in its opt-in
-feature. No optional library enters the dependency-free verified kernel.
+feature. Console's gRPC transport is plaintext loopback only; console-subscriber and console-api
+disable direct defaults, and their normal dependency tree contains no TLS, AWS or credential
+provider crate. The 2026-10-24 feature audit shows the complete AWS-LC/rustls/SDK feature sets are
+identical to actual main 204034c3, including `aws-lc-sys/prebuilt-nasm` from the existing SDK
+rustls and catalog graph, not optional profiling. Production crypto defaults are unchanged.
+No optional library enters the dependency-free verified kernel.
 
 Review these pins monthly for advisories and exporter behavior; rerun planted-input/thread-name
 privacy controls, DHAT memory-export/command-line sanitization tests and default-tree checks.

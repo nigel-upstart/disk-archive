@@ -47,7 +47,10 @@ console)
 cpu)
 	case $(uname -s) in
 	Darwin)
-		mise -E profiling exec -- samply record --save-only -o "$run_dir/cpu.json" -- "${clean[@]}" "$binary" cpu "$run_dir"
+		# samply must launch the binary directly: system env strips its macOS
+		# DYLD injection. Sanitize the sampler's environment before injection.
+		samply_bin=$(mise -E profiling which samply)
+		"${clean[@]}" "$samply_bin" record --save-only -o "$run_dir/cpu.json" -- "$binary" cpu "$run_dir"
 		python3 scripts/profile-validate.py cpu "$run_dir/cpu.json"
 		;;
 	Linux)

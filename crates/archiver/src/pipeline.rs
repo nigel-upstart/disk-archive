@@ -250,18 +250,24 @@ pub async fn run_profiled(
     let child = cancel.child_token();
     let _cancel_on_drop = child.clone().drop_guard();
     tokio::spawn(async move {
-        // Keep even an initialization failure until AFTER owned cleanup completes.
+        // Capture must start before admitting destructive work. On an initialization
+        // failure drain constructed services, but never acquire source/work ownership.
         let profile_pool = services.pool.clone();
         let capture = profile_pool
             .run(&CancellationToken::new(), move || {
                 crate::profile::Capture::start(request).map_err(|_| Error::Profiling)
             })
             .await;
-        let result = Box::pin(run_owned(config, options, services, child)).await;
-        let finished = match capture {
-            Ok(capture) => capture.finish(&profile_pool).await,
-            Err(error) => Err(error),
+        let capture = match capture {
+            Ok(capture) => capture,
+            Err(error) => {
+                let _ = services.store.drain().await;
+                let _ = profile_pool.drain().await;
+                return Err(error);
+            }
         };
+        let result = Box::pin(run_owned(config, options, services, child)).await;
+        let finished = capture.finish(&profile_pool).await;
         let report = result?;
         finished.map_err(|_| Error::Profiling)?;
         Ok(report)
