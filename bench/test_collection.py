@@ -163,6 +163,8 @@ class CollectionTests(unittest.TestCase):
             baseline.write_text(json.dumps(reference))
             before = baseline.read_bytes()
         with ExitStack() as stack:
+            # These injected local receipts must not inherit the hosted baseline trust path.
+            stack.enter_context(patch.dict(os.environ, {"GITHUB_ACTIONS": "false"}))
             stack.enter_context(patch("run.sys.platform", "linux"))
             stack.enter_context(patch("run.fingerprint", side_effect=lambda *a, **kw: deepcopy(environment)))
             stack.enter_context(patch("run.effective_public", return_value=public))
@@ -176,6 +178,14 @@ class CollectionTests(unittest.TestCase):
         if baseline is not None:
             self.assertEqual(baseline.read_bytes(), before)
         return status, json.loads((root / "report/decision.json").read_text()), population.call_count, audit.call_count, kernel_load.call_count
+
+    def test_injected_receipts_isolate_and_restore_hosted_environment(self):
+        with patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}):
+            with tempfile.TemporaryDirectory() as temporary:
+                status, _, populations, audits, kernel_reads = self.injected(Path(temporary), public=True, baseline_kind="timing")
+            self.assertEqual(status, 1)
+            self.assertEqual((populations, audits, kernel_reads), (2, 1, 1))
+            self.assertEqual(os.environ["GITHUB_ACTIONS"], "true")
 
     def test_private_record_only_and_public_missing_baseline(self):
         for public, expected in [(False, 0), (True, 1)]:

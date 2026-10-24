@@ -35,16 +35,20 @@ proof; hosted PRs cannot raise their own comparison ceiling.
 
 Actual Cargo all-target/all-feature Clippy passes. Actual nextest: 160/160 pass,
 zero skips, including SDK single/retry/6 MiB multipart/download controls and native
-scanner controls. All 73 Python controls pass. Actual normal AND instrumented
+scanner controls. All 74 Python controls pass locally and with GITHUB_ACTIONS=true. Actual normal AND instrumented
 collector checks verify 89 archives, one unchanged blocked source, complete HTTP
 observations and all 90 manifest-history rows. Instrumented coverage, with the
 collector INCLUDED, is 6,330/6,688 = 94.65%.
 
 The first complete attempt failed at report invocation: pinned cargo-llvm-cov
 rejects report-only --all-features/--locked. Corrected the invocation; reporting
-existing profiles passes the unchanged 90% floor. A complete passing task check,
-normal commit/push hooks, current-head review and all CI still must run; no full
-gate completion claim from the earlier failure. Actual hosted Criterion/Valgrind,
+existing profiles passes the unchanged 90% floor. The corrected complete task check
+passes on a08ba83: 51 Verus proofs plus negatives, parity, supply-chain and seven
+SBOMs included. Normal initial commit hook passed. Exact-head CodeRabbit reviewed
+all 41 files and found one valid test-only hosted-environment isolation bug; RED
+reproduction then local/hosted GREEN controls validate the fix. Normal fix commit/
+push hooks, fresh current-head review and all CI remain outstanding; no pass claim
+is based on the earlier failed attempt. Actual hosted Criterion/Valgrind,
 Linux syscall audit, resource populations, ten unchanged-main noise reruns and
 a genuine throwaway injected-regression PR remain outstanding. Synthetic Python
 controls and old development-linked runs do not satisfy those requirements.

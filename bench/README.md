@@ -148,12 +148,18 @@ can use the advisory comparison CLI, not a skipped-success full collection.
 
 Actual merged-G Cargo validation has passed 160 Rust tests (zero skips), including
 SDK/multipart and native controls, plus the normal and instrumented 89+1 collector.
-All 73 Python controls pass; injected orchestration controls are NOT hosted noise
+All 74 Python controls pass locally and with `GITHUB_ACTIONS=true`; injected
+orchestration controls are NOT hosted noise
 or genuine regression-injection evidence. Current instrumented coverage is 94.65%
 (6,330/6,688 lines), with the collector included rather than excluded. The first full
 check exposed an unsupported report-only CLI argument; that command was corrected
-without changing the all-feature test stage, exclusions or 90% floor. A complete
-passing rerun, full hooks/CI/review, real hosted Linux/Valgrind/resource runs,
+without changing the all-feature test stage, exclusions or 90% floor. The corrected
+complete `task check` passes, including 51 Verus proofs/negative controls, parity,
+supply-chain gates and seven SBOMs. CodeRabbit's first exact-head review identified
+a test-only ambient-hosted-environment dependency; a red reproduction and local/
+hosted-environment controls validate its fix without downgrading production gates.
+The fix still needs normal push hooks/current-head review/CI. Real hosted
+Linux/Valgrind/resource runs,
 required-check activation, baseline approval/ratchet wiring, ten unchanged-main
 hosted noise runs and the throwaway regression PR remain pending.
 Unit controls do not satisfy those acceptance criteria or close issue #7.
