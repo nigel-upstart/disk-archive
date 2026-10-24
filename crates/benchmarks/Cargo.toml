@@ -1,0 +1,95 @@
+[package]
+name = "disk-archive-benchmarks"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[features]
+components = ["dep:disk-archive-scanner", "dep:flate2", "dep:sha2"]
+pipeline = [
+  "components",
+  "sdk",
+  "dep:disk-archive",
+  "dep:disk-archive-verified",
+  "dep:rusqlite",
+  "dep:serde",
+  "dep:serde_json",
+]
+sdk = [
+  "transport",
+  "dep:aws-sdk-s3",
+  "dep:disk-archive-storage",
+  "dep:disk-archive-metrics",
+  "dep:tempfile",
+  "dep:sha2",
+  "dep:flate2",
+]
+transport = ["dep:hyper", "dep:hyper-util", "dep:tokio", "dep:tokio-util"]
+
+[dependencies]
+disk-archive = { path = "../archiver", version = "=0.1.0", optional = true }
+disk-archive-verified = { path = "../verified", version = "=0.1.0", optional = true }
+rusqlite = { version = "=0.41.1", default-features = false, features = [
+  "libsqlite3-sys",
+  "bundled",
+], optional = true }
+serde = { version = "=1.0.229", features = ["derive"], optional = true }
+serde_json = { version = "=1.0.154", features = ["raw_value"], optional = true }
+aws-sdk-s3 = { version = "=1.153.0", default-features = false, features = [
+  "behavior-version-latest",
+  "default-https-client",
+  "http-1x",
+  "rt-tokio",
+], optional = true }
+disk-archive-storage = { path = "../storage", version = "=0.1.0", features = [
+  "test-support",
+], optional = true }
+disk-archive-metrics = { path = "../metrics", version = "=0.1.0", optional = true }
+tempfile = { version = "=3.27.0", optional = true }
+sha2 = { version = "=0.11.1", optional = true }
+flate2 = { version = "=1.1.10", optional = true }
+hyper = { version = "=1.12.0", features = ["http1", "server"], optional = true }
+hyper-util = { version = "=0.1.21", features = [
+  "client-legacy",
+  "http1",
+  "tokio",
+], optional = true }
+tokio = { version = "=1.54.1", features = [
+  "fs",
+  "net",
+  "rt-multi-thread",
+  "macros",
+  "io-util",
+  "sync",
+], optional = true }
+tokio-util = { version = "=0.7.20", features = ["rt"], optional = true }
+disk-archive-core = { path = "../core", version = "=0.1.0" }
+disk-archive-scanner = { path = "../scanner", version = "=0.1.0", optional = true }
+zeroize = "=1.9.1"
+
+[dev-dependencies]
+criterion = { version = "=0.8.2", default-features = false, features = [
+  "cargo_bench_support",
+] }
+gungraun = "=0.20.0"
+
+[[bin]]
+name = "perf-pipeline"
+path = "collectors/pipeline.rs"
+required-features = ["pipeline"]
+
+[[bench]]
+name = "criterion"
+harness = false
+required-features = ["components"]
+
+[[bench]]
+name = "callgrind"
+harness = false
+required-features = ["components"]
+
+[lints]
+workspace = true

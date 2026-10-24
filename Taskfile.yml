@@ -22,8 +22,20 @@ tasks:
   verify:
     cmds: ["bash scripts/quiet-run.sh --success-pattern 'Production-source Verus|negative control rejected|Production kernel proofs' -- bash scripts/verify.sh"]
   bench:
-    desc: Compile benchmarks; performance gate follows in issue 7
-    cmds: ['{{.QUIET}} cargo bench --workspace --no-run --locked']
+    desc: Criterion confidence intervals for fixed-buffer microbenchmarks
+    cmds: ['{{.QUIET}} cargo bench -p disk-archive-benchmarks --features components --bench criterion --locked']
+  bench:build:
+    desc: Build actual release collector and both microbenchmark harnesses
+    cmds: ['{{.QUIET}} python3 -B bench/build.py {{.CLI_ARGS}}']
+  bench:kernels:
+    desc: Collect actual Linux Callgrind instruction and cache events
+    cmds: ['{{.QUIET}} python3 -B bench/kernels.py {{.CLI_ARGS}}']
+  bench:collect:
+    desc: Actual Linux native pipeline, independent verification and resource gate
+    cmds: ['{{.QUIET}} python3 -B bench/run.py {{.CLI_ARGS}}']
+  bench:gate:
+    desc: Compare collected actual measurements; never capture or raise a baseline
+    cmds: ['{{.QUIET}} python3 -B bench/gate.py {{.CLI_ARGS}}']
   sbom:
     cmds: ['{{.QUIET}} bash scripts/sbom.sh']
   coverage:
