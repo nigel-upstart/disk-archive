@@ -61,9 +61,12 @@ Executable self-hashing now uses the actual regular file's metadata size instead
 of an arbitrary512MiB limit; that limit is only a possible cause, NOT a proven
 explanation or Linux-pass receipt. Perf40052129245 also failed Callgrind after an
 actual successful release build/Criterion run, before OS-audit/resource collection.
-Added allowlisted tool classification/exit/dump-count diagnostics (no raw output)
+Added allowlisted tool classification/exit/summary-count diagnostics (no raw output)
 and trusted-ref release cache save after successful compile even on later failure;
 no gates, cache-key boundaries, or counter completeness requirements were waived.
+Kernel counts are now read from Gungraun's versioned JSON summaries (schema v7)
+instead of a custom Callgrind profile parser; only synthetic summary controls
+validate this locally, so the next hosted Valgrind run remains the real evidence.
 The guard/diagnostics still need normal commit/
 push hooks, fresh current-head review and all CI; no pass claim is based on the
 older source or failed attempts. Actual hosted Criterion/Valgrind,

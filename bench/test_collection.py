@@ -97,47 +97,92 @@ class KernelTests(unittest.TestCase):
             self.assertEqual(kernels.failure_category(payload), expected)
             self.assertNotIn("private-value", kernels.failure_category(payload))
 
-    def dumps(self, root):
-        paths = []
-        for function in kernels.FUNCTIONS.values():
-            path = root / f"callgrind.{function}.case.out"
-            path.write_text("events: " + " ".join(CACHE_EVENTS) + "\ntotals: " + " ".join(["100"] * len(CACHE_EVENTS)) + "\n")
-            paths.append(path)
-        return paths
+    def summary(self, function, value=100, **changes):
+        """Synthetic Gungraun v7 summary line; NOT a measured Callgrind observation."""
+        metrics = {event: dict(values=dict(new=value)) for event in CACHE_EVENTS}
+        # Derived/extra metrics present in real summaries are ignored, never required.
+        metrics["EstimatedCycles"] = dict(values=dict(new=value))
+        metrics["L1HitRate"] = dict(values=dict(new=99.5))
+        summary = dict(version="7", kind="LibraryBenchmark", baselines=[None, None], function_name=function,
+                       module_path=f"callgrind::actual_components::{function}",
+                       profiles=[dict(tool="Callgrind", data=dict(parts=[dict(metrics=metrics, tool_run=dict(new=dict(command="synthetic", pid=1)))],
+                                                               total=dict(metrics=metrics, regressions=[])))])
+        summary.update(changes)
+        return summary
 
-    def test_only_complete_fresh_unambiguous_event_sets_pass(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            paths = self.dumps(root)
-            result = kernels.counts(root)
-            self.assertEqual(set(result), set(kernels.FUNCTIONS))
-            self.assertEqual(result["scanner"][0]["Ir"], 100)
-            (root / "callgrind.scanner_fixed_buffer.old.out").write_text(paths[0].read_text())
-            with self.assertRaises(ValueError):
-                kernels.counts(root)
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            paths = self.dumps(root)
-            paths[0].write_text("events: Ir\ntotals: 100\n")
-            with self.assertRaises(ValueError):
-                kernels.counts(root)
+    def stdout(self, summaries):
+        return ("\n".join(json.dumps(item) for item in summaries) + "\n").encode()
 
-    def test_hardlinked_dumps_cannot_impersonate_different_kernels(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            paths = self.dumps(root)
-            paths[1].unlink()
-            paths[1].hardlink_to(paths[0])
-            with self.assertRaises(ValueError):
-                kernels.counts(root)
+    def complete(self):
+        return [self.summary(function) for function in kernels.FUNCTIONS.values()]
+
+    def test_only_complete_unambiguous_summaries_pass(self):
+        result = kernels.counts(self.stdout(self.complete()))
+        self.assertEqual(set(result), set(kernels.FUNCTIONS))
+        self.assertEqual(result["scanner"], [dict.fromkeys(CACHE_EVENTS, 100)])
+        complete = self.complete()
+        for broken in (complete[:2], [*complete, complete[0]], [*complete, self.summary("unregistered")],
+                       [*complete[:2], self.summary("unregistered")]):
+            with self.subTest(count=len(broken)), self.assertRaises(ValueError):
+                kernels.counts(self.stdout(broken))
+
+    def test_summary_format_and_freshness_are_required(self):
+        mutations = [
+            dict(version="6"), dict(kind="BinaryBenchmark"), dict(baselines=["saved", None]),
+            dict(function_name=["core_needle_build_and_rewrite"]),
+        ]
+        for change in mutations:
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                kernels.counts(self.stdout([self.summary(kernels.FUNCTIONS["redaction"], **change),
+                                            *self.complete()[1:]]))
+        for alter in ("tool", "profiles", "parts"):
+            item = self.summary(kernels.FUNCTIONS["redaction"])
+            profile = item["profiles"][0]
+            if alter == "tool":
+                profile["tool"] = "Cachegrind"
+            elif alter == "profiles":
+                item["profiles"].append(deepcopy(profile))
+            else:
+                profile["data"]["parts"].append(deepcopy(profile["data"]["parts"][0]))
+            with self.subTest(alter=alter), self.assertRaises(ValueError):
+                kernels.counts(self.stdout([item, *self.complete()[1:]]))
+
+    def test_missing_or_non_integer_events_never_become_zero(self):
+        def broken(edit):
+            item = self.summary(kernels.FUNCTIONS["scanner"])
+            edit(item["profiles"][0]["data"]["total"]["metrics"])
+            return [self.complete()[0], item, self.complete()[2]]
+
+        edits = [
+            lambda metrics: metrics.pop("DLmw"),
+            lambda metrics: metrics["I1mr"].update(values=dict(new=1.5)),
+            lambda metrics: metrics["I1mr"].update(values=dict(new=True)),
+            lambda metrics: metrics["I1mr"].update(values=dict(new=-1)),
+            lambda metrics: metrics["D1mr"].update(values=dict(new=1, old=1)),
+            lambda metrics: metrics["D1mr"].update(values=dict(old=1)),
+            lambda metrics: metrics["Ir"].update(values=dict(new=0)),
+        ]
+        for index, edit in enumerate(edits):
+            with self.subTest(edit=index), self.assertRaises(ValueError):
+                kernels.counts(self.stdout(broken(edit)))
+
+    def test_malformed_or_oversized_output_fails(self):
+        for payload in (b"", b"not json\n", b"[]\n", b"\xff\n", b" " * (kernels.MAX_SUMMARY_BYTES + 1)):
+            with self.subTest(size=len(payload)), self.assertRaises(ValueError):
+                kernels.counts(payload)
+
+    def test_diagnostic_counts_contain_no_output_values(self):
+        payload = self.stdout(self.complete()) + b"private-value\n"
+        matches = kernels.summary_matches(payload)
+        self.assertEqual(matches, dict.fromkeys(kernels.FUNCTIONS, 1))
+        self.assertNotIn("private-value", json.dumps(matches))
 
     def test_kernel_source_and_tools_cannot_be_mixed(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            self.dumps(root)
             receipt = root / "kernels.json"
             environment = dict(source_commit="a" * 40)
-            data = dict(schema=1, fingerprint=environment, binary_sha256="b" * 64, kernels=kernels.counts(root))
+            data = dict(schema=1, fingerprint=environment, binary_sha256="b" * 64, kernels=kernels.counts(self.stdout(self.complete())))
             receipt.write_text(json.dumps(data))
             self.assertEqual(kernels.load(receipt, environment), data)
             with self.assertRaises(ValueError):

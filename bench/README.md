@@ -127,8 +127,10 @@ with explicit review/approval, never a private-run ceiling.
  table; input aliases/hard links and existing decision outputs are refused.
 The draft `.github/workflows/perf.yml` runs on `ubuntu-24.04` with complete source
 history. `bench/build.py` selects exact Cargo-emitted executables; `kernels.py`
-collects real Callgrind output in an owned temporary directory and retains only
-numeric events. `run.py` binds those receipts to the same clean source/toolchain
+runs real Callgrind through Gungraun in an owned temporary directory and reads
+only the seven numeric events from Gungraun's own versioned JSON summaries
+(schema v7, one fresh single-part summary per kernel); it no longer parses
+Callgrind profile files. `run.py` binds those receipts to the same clean source/toolchain
 and binaries, requires the positive strace canary, then gathers ten fresh-process
 pipeline resource samples. A timing regression triggers one new resource population;
 deterministic kernels are never rerun. Only sanitized metadata is uploaded, not

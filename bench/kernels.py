@@ -1,4 +1,8 @@
-"""Run real Gungraun/Callgrind and retain only complete numeric microbenchmark events."""
+"""Run real Gungraun/Callgrind and retain only complete numeric microbenchmark events.
+
+Counts come from Gungraun's own versioned JSON summaries (schema v7), not from
+parsing Callgrind profile files.
+"""
 from __future__ import annotations
 
 import argparse
@@ -12,7 +16,6 @@ import tempfile
 from assemble import CACHE_EVENTS, KERNELS, digest, unsigned
 from audit import binary_digest
 from build import load as load_build
-from callgrind import instruction_cache_counts
 from fingerprint import collect as fingerprint
 
 FUNCTIONS = {
@@ -20,28 +23,79 @@ FUNCTIONS = {
     "scanner": "scanner_fixed_buffer",
     "gzip_sha256": "gzip_sha256_fixed_buffer",
 }
+# Gungraun 0.20.0's machine-readable summary format; any other version fails closed.
+SUMMARY_VERSION = "7"
+MAX_SUMMARY_BYTES = 4 * 1024 * 1024
 
 
-def counts(directory: Path) -> dict[str, list[dict]]:
-    """Require one fresh full-cache dump per single-threaded kernel, no glob-first selection."""
-    files = list(directory.rglob("callgrind.*.out"))
-    if set(FUNCTIONS) != set(KERNELS) or len(files) != len(KERNELS):
-        raise ValueError("exactly one fresh Callgrind output per kernel required")
-    result, consumed = {}, set()
-    for kernel, function in FUNCTIONS.items():
-        matches = [path for path in files if path.name.startswith(f"callgrind.{function}.")]
-        if len(matches) != 1 or matches[0].is_symlink() or not matches[0].is_file():
-            raise ValueError("missing, aliased or ambiguous kernel output")
-        path = matches[0]
-        identity = (path.stat().st_dev, path.stat().st_ino)
-        if identity in consumed:
-            raise ValueError("kernel observations must be independent dumps")
-        consumed.add(identity)
-        events = instruction_cache_counts(path)
-        if events["Ir"] <= 0:
-            raise ValueError("kernel instructions were not observed")
-        result[kernel] = [events]
+def metric(metrics: object, event: str) -> int:
+    """One fresh integer observation; comparisons, floats and absent values never pass."""
+    entry = metrics.get(event) if isinstance(metrics, dict) else None
+    values = entry.get("values") if isinstance(entry, dict) else None
+    if not isinstance(values, dict) or set(values) != {"new"}:
+        raise ValueError("exactly one fresh Callgrind value per cache event required")
+    value = values["new"]
+    if type(value) is not int or value < 0:
+        raise ValueError("Callgrind counts must be unsigned integers")
+    return value
+
+
+def events(summary: object) -> tuple[str, dict[str, int]]:
+    """Validate one Gungraun summary for a fresh single-part library Callgrind run."""
+    if not isinstance(summary, dict) or summary.get("version") != SUMMARY_VERSION:
+        raise ValueError("unsupported Gungraun summary version")
+    if summary.get("kind") != "LibraryBenchmark" or summary.get("baselines") != [None, None]:
+        raise ValueError("fresh library benchmark summary required")
+    profiles = summary.get("profiles")
+    if not isinstance(profiles, list) or len(profiles) != 1 or not isinstance(profiles[0], dict):
+        raise ValueError("exactly one tool profile required")
+    profile = profiles[0]
+    data = profile.get("data")
+    if profile.get("tool") != "Callgrind" or not isinstance(data, dict):
+        raise ValueError("Callgrind profile required")
+    parts, total = data.get("parts"), data.get("total")
+    if not isinstance(parts, list) or len(parts) != 1 or not isinstance(total, dict):
+        raise ValueError("exactly one single-threaded Callgrind part required")
+    function = summary.get("function_name")
+    if not isinstance(function, str):
+        raise ValueError("benchmark function name required")
+    metrics = total.get("metrics")
+    observed = {event: metric(metrics, event) for event in CACHE_EVENTS}
+    if observed["Ir"] <= 0:
+        raise ValueError("kernel instructions were not observed")
+    return function, observed
+
+
+def counts(stdout: bytes) -> dict[str, list[dict]]:
+    """Require exactly one valid summary per registered kernel from Gungraun's JSON lines."""
+    if set(FUNCTIONS) != set(KERNELS) or len(stdout) > MAX_SUMMARY_BYTES:
+        raise ValueError("bounded summary output for registered kernels required")
+    names = {function: kernel for kernel, function in FUNCTIONS.items()}
+    result: dict[str, list[dict]] = {}
+    for line in stdout.decode().splitlines():
+        if not line.strip():
+            continue
+        function, observed = events(json.loads(line))
+        kernel = names.get(function)
+        if kernel is None or kernel in result:
+            raise ValueError("unknown or duplicate kernel summary")
+        result[kernel] = [observed]
+    if set(result) != set(KERNELS):
+        raise ValueError("exactly one summary per kernel required")
     return result
+
+
+def summary_matches(stdout: bytes) -> dict[str, int]:
+    """Value-free per-kernel summary counts for diagnostics; never raw output."""
+    matches = dict.fromkeys(FUNCTIONS, 0)
+    for line in stdout[:MAX_SUMMARY_BYTES].decode(errors="replace").splitlines():
+        try:
+            function = json.loads(line).get("function_name")
+        except (ValueError, AttributeError):
+            continue
+        for kernel, name in FUNCTIONS.items():
+            matches[kernel] += function == name
+    return matches
 
 
 def load(path: Path, environment: dict) -> dict:
@@ -87,23 +141,21 @@ def collect(build: Path, output: Path) -> None:
     before = binary_digest(binary)
     with tempfile.TemporaryDirectory(prefix="disk-archive-kernels-") as owned:
         temporary = Path(owned)
-        # Neither profiles (which contain paths) nor raw tool output become artifacts.
+        # Profiles and summaries contain paths/commands; only validated counts leave this scope.
         settings = dict(os.environ, GUNGRAUN_HOME=str(temporary))
         result = subprocess.run([str(binary), "--output-format=json"], cwd=root, env=settings, check=False, timeout=1200,
-                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        # Only fixed classifications and observed dump counts leave this scope;
+                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Only fixed classifications and summary counts are reported;
         # tool output is never forwarded or written to a log/artifact.
-        dump_count = len(list(temporary.rglob("callgrind.*.out")))
         if result.returncode:
             print("Kernel diagnostic: " + json.dumps(dict(stage="callgrind-execution", exit_status=result.returncode,
-                  observed_dumps=dump_count, category=failure_category(result.stderr)), sort_keys=True), file=sys.stderr)
+                  kernel_summaries=summary_matches(result.stdout), category=failure_category(result.stderr)), sort_keys=True), file=sys.stderr)
             raise subprocess.CalledProcessError(result.returncode, "callgrind-tool")
         try:
-            observed = counts(temporary)
-        except (ValueError, OSError):
-            matches = {name: sum(path.name.startswith(f"callgrind.{function}.") for path in temporary.rglob("callgrind.*.out")) for name, function in FUNCTIONS.items()}
-            print("Kernel diagnostic: " + json.dumps(dict(stage="event-extraction", observed_dumps=dump_count,
-                  kernel_matches=matches), sort_keys=True), file=sys.stderr)
+            observed = counts(result.stdout)
+        except (ValueError, UnicodeDecodeError):
+            print("Kernel diagnostic: " + json.dumps(dict(stage="summary-extraction", summary_bytes=len(result.stdout),
+                  kernel_summaries=summary_matches(result.stdout)), sort_keys=True), file=sys.stderr)
             raise
     if fingerprint(root, profile="release") != environment or binary_digest(binary) != before:
         raise ValueError("kernel binary/source/environment changed")
