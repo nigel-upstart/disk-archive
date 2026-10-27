@@ -1,6 +1,6 @@
 {
   "omitted": "Unused examples, integration-tests, benches, fuzz, and src test corpus files are not copied. Original Rust/md source is unchanged. test-common is retained only for the manifest dev-path reference.",
-  "patched_workspace_sha256": "fe8599ab18c635f476295aaec4fd96c39de405f48df4b262264e1450febc9459",
+  "patched_workspace_sha256": "5c501769633df8a4dafdecc1375df49cffdabf78f3000e4b2f1dc7f77c6cfc50",
   "revision": "dc391970cd36e0d6d6ed044dcb3351b26131e9be",
   "source_files": {
     "Cargo.toml": "08f3a9a4b8f7f632ef9dc36ef6b999181656f1ac4d43781490cca614515df3e8",
