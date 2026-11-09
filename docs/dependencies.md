@@ -79,8 +79,8 @@ not a production dependency, and credential verification/update checks are off.
 
 ## SQLite state-writer admission
 
-The async shell uses registry `rusqlite 0.40.2` with defaults disabled and only
-`libsqlite3-sys`/`bundled` enabled. The lockfile admits `libsqlite3-sys 0.38.2`,
+The async shell uses registry `rusqlite 0.41.1` with defaults disabled and only
+`libsqlite3-sys`/`bundled` enabled. The lockfile admits `libsqlite3-sys 0.39.1`,
 `fallible-iterator 0.3.0`, `fallible-streaming-iterator 0.1.9` and the native build
 helper `vcpkg 0.2.15`; existing registry identities and immutable Git pins remain
 unchanged. Bundled SQLite avoids an ambient system-library version dependency;
@@ -88,6 +88,17 @@ loadable extensions and the default alternate backends are not enabled. One boun
 blocking writer owns the connection. Re-run license/advisory/feature checks,
 SQLite durability/resume regressions and every workspace SBOM on upgrades. No new
 advisory, license or duplicate-version exception is introduced for this layer.
+
+The SQLite security update for
+[RUSTSEC-2026-0459](https://rustsec.org/advisories/RUSTSEC-2026-0459) upgrades
+only `rusqlite` and `libsqlite3-sys`. The latter bundles SQLite 3.54.1, above the
+patched floor of 3.54.0 for mismatched database/WAL page sizes exposing stale
+page-cache memory. Upstream's current
+[rusqlite 0.41.1 release](https://github.com/rusqlite/rusqlite/releases/tag/v0.41.1)
+and the registry crate's bundled SQLite version were checked for this change.
+No system-SQLite substitution, SQLCipher feature, advisory exception, or runtime
+state migration is introduced. Keep the bundled SQLite floor patched on future
+upgrades and rerun state durability/resume and complete supply-chain gates.
 
 ## October 2026 security patch floor
 
