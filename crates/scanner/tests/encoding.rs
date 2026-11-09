@@ -370,6 +370,43 @@ fn depth_and_carrier_budgets_fail_closed_with_static_errors()
 }
 
 #[test]
+fn inert_escape_markers_at_depth_limit_do_not_block() -> Result<(), Box<dyn std::error::Error>> {
+    for json in [true, false] {
+        let mut carrier = br"\q%".to_vec();
+        for _ in 0..4 {
+            carrier = escaped(std::str::from_utf8(&carrier)?, json)?;
+        }
+        for chunk in [1, 31, 64 * 1024] {
+            let summary = scanner(chunk)?.scan(carrier.as_slice(), |_| Ok(()))?;
+            assert_eq!(summary.bytes, carrier.len() as u64);
+            assert_eq!(summary.findings, 0);
+        }
+        // Another actual transformation still exceeds the unchanged depth cap.
+        carrier = escaped(std::str::from_utf8(&carrier)?, json)?;
+        assert_eq!(
+            scanner(31)?.scan(carrier.as_slice(), |_| Ok(())),
+            Err(ScanError::Budget)
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn encoded_secrets_at_depth_limit_still_block() -> Result<(), Box<dyn std::error::Error>> {
+    for json in [true, false] {
+        let mut carrier = b"demo_abcd1234efgh5678".to_vec();
+        for _ in 0..4 {
+            carrier = escaped(std::str::from_utf8(&carrier)?, json)?;
+        }
+        assert_eq!(
+            scanner(31)?.scan(carrier.as_slice(), |_| Ok(())),
+            Err(ScanError::UnsupportedEncoding)
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn ordinary_records_do_not_exhaust_a_lifetime_decode_budget()
 -> Result<(), Box<dyn std::error::Error>> {
     let scanner = scanner(64 * 1024)?;

@@ -125,9 +125,17 @@ struct Budget {
 
 impl Budget {
     fn charge(&mut self, bytes: usize, depth: usize) -> Result<(), ScanError> {
+        self.charge_work(bytes)?;
+        if depth >= DEPTH {
+            return Err(ScanError::Budget);
+        }
+        Ok(())
+    }
+
+    fn charge_work(&mut self, bytes: usize) -> Result<(), ScanError> {
         self.bytes = self.bytes.checked_add(bytes).ok_or(ScanError::Budget)?;
         self.candidates += 1;
-        if self.bytes > DECODE_BYTES || self.candidates > CANDIDATES || depth >= DEPTH {
+        if self.bytes > DECODE_BYTES || self.candidates > CANDIDATES {
             return Err(ScanError::Budget);
         }
         Ok(())
@@ -144,9 +152,14 @@ fn inspect(
     if bytes.contains(&b'\\') || bytes.contains(&b'%') {
         for json in [true, false] {
             if (json && bytes.contains(&b'\\')) || (!json && bytes.contains(&b'%')) {
-                budget.charge(bytes.len(), depth)?;
+                // Probing an inert escape marker consumes work, not a decoding
+                // level. Enforce depth only when a real transformation exists.
+                budget.charge_work(bytes.len())?;
                 let mut decoded = output(bytes.len());
                 if unescape(bytes, json, &mut decoded)? {
+                    if depth >= DEPTH {
+                        return Err(ScanError::Budget);
+                    }
                     check(scanner, native, &decoded, depth, budget)?;
                 }
             }
