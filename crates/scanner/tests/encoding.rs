@@ -569,9 +569,12 @@ fn provenance_does_not_invent_boundaries_or_exempt_multiline_rules()
         Err(ScanError::UnsupportedEncoding)
     );
     let excessive = "x%20".repeat(4097);
+    assert_eq!(scanner.scan(excessive.as_bytes(), |_| Ok(()))?.findings, 0);
+    // Optional metadata exhaustion must not certify an unprovenanced secret.
+    let hidden = format!("{excessive} demo_abcd1234efgh5678 !");
     assert_eq!(
-        scanner.scan(excessive.as_bytes(), |_| Ok(())),
-        Err(ScanError::Budget)
+        scanner.scan(hidden.as_bytes(), |_| Ok(())),
+        Err(ScanError::UnsupportedEncoding)
     );
     for json in [true, false] {
         let carrier = nested_escapes("! \\q%\n!", json, 8)?;

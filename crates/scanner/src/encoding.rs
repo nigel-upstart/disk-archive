@@ -52,7 +52,7 @@ impl<'a> Provenance<'a> {
         (start > 0 && end < self.source.len()).then_some(start..end)
     }
 
-    fn project(&self, local: &[Run]) -> Result<Self, ScanError> {
+    fn project(&self, local: &[Run]) -> Self {
         let mut runs = Vec::new();
         let mut at = 0;
         for run in local {
@@ -79,25 +79,22 @@ impl<'a> Provenance<'a> {
                             ..(run.decoded.start + end - run.source),
                         source: parent.source + start - parent.decoded.start,
                     },
-                )?;
+                );
             }
         }
-        Ok(Self {
+        Self {
             source: self.source,
             runs,
-        })
+        }
     }
 }
 
-fn push_run(runs: &mut Vec<Run>, run: Run) -> Result<(), ScanError> {
-    if run.decoded.is_empty() {
-        return Ok(());
+fn push_run(runs: &mut Vec<Run>, run: Run) {
+    // Provenance is optional evidence, not a decoding budget. Discard excess
+    // runs: a decoded match requiring one then blocks instead of being excused.
+    if !run.decoded.is_empty() && runs.len() < PROVENANCE_RUNS {
+        runs.push(run);
     }
-    if runs.len() >= PROVENANCE_RUNS {
-        return Err(ScanError::Budget);
-    }
-    runs.push(run);
-    Ok(())
 }
 
 pub(crate) struct Preflight<'a> {
@@ -262,9 +259,7 @@ fn inspect(
                     if depth >= DEPTH {
                         return Err(ScanError::Budget);
                     }
-                    let mapped = provenance
-                        .map(|parent| parent.project(&local))
-                        .transpose()?;
+                    let mapped = provenance.map(|parent| parent.project(&local));
                     check(scanner, native, &decoded, depth, budget, mapped.as_ref())?;
                 }
             }
@@ -470,7 +465,7 @@ fn unescape(
                         decoded: literal_output..output.len(),
                         source: literal_input,
                     },
-                )?;
+                );
                 append(output, &[value])?;
                 changed = true;
                 at += 3;
@@ -499,7 +494,7 @@ fn unescape(
                             decoded: literal_output..output.len(),
                             source: literal_input,
                         },
-                    )?;
+                    );
                     append(output, ch.encode_utf8(&mut *utf8).as_bytes())?;
                     changed = true;
                     at += used;
@@ -522,7 +517,7 @@ fn unescape(
                         decoded: literal_output..output.len(),
                         source: literal_input,
                     },
-                )?;
+                );
                 append(output, &[escaped])?;
                 changed = true;
                 at += 2;
@@ -540,7 +535,7 @@ fn unescape(
             decoded: literal_output..output.len(),
             source: literal_input,
         },
-    )?;
+    );
     Ok(changed)
 }
 
@@ -582,7 +577,7 @@ mod tests {
         let mut decoded = output(source.len());
         let mut runs = Vec::new();
         assert!(unescape(source, false, &mut decoded, &mut runs)?);
-        let mapped = origin.project(&runs)?;
+        let mapped = origin.project(&runs);
         assert_eq!(mapped.original(2..8), Some(4..10));
         assert!(mapped.original(1..2).is_none());
         assert!(mapped.original(0..3).is_none());
@@ -590,7 +585,7 @@ mod tests {
         decoded.clear();
         runs.clear();
         assert!(unescape(source, true, &mut decoded, &mut runs)?);
-        assert!(!origin.project(&runs)?.runs.is_empty());
+        assert!(!origin.project(&runs).runs.is_empty());
         let mut runs = Vec::new();
         for _ in 0..PROVENANCE_RUNS {
             push_run(
@@ -599,18 +594,16 @@ mod tests {
                     decoded: 1..2,
                     source: 1,
                 },
-            )?;
+            );
         }
-        assert_eq!(
-            push_run(
-                &mut runs,
-                Run {
-                    decoded: 1..2,
-                    source: 1
-                }
-            ),
-            Err(ScanError::Budget)
+        push_run(
+            &mut runs,
+            Run {
+                decoded: 2..3,
+                source: 2,
+            },
         );
+        assert_eq!(runs.len(), PROVENANCE_RUNS);
         Ok(())
     }
 

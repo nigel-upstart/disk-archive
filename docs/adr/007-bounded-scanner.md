@@ -157,8 +157,9 @@ JSON/JSON/percent/Base64/UTF16 control while preserving a strict nesting bound.
 Physical-line and joined-run probes share that budget; inert escape probes and
 layout joining consume work, not a decoding level. Repeated raw provenance
 confirmation also charges the examined source bytes. Each unescape/projection
-retains at most 4,096 value-free runs (at most two lists per live level), failing
-closed on exhaustion. Carrier/expansion/work ceilings remain unchanged. Exceeding any limit returns `Budget`, never clean success. Clean
+retains at most 4,096 value-free runs (at most two lists per live level). Excess
+runs are omitted, not guessed: secret-free decoding can continue, but a match
+requiring missing provenance blocks. Carrier/expansion/work ceilings remain unchanged. Exceeding any limit returns `Budget`, never clean success. Clean
 base64/UTF16 within these caps is not blanket rejected. These bounded probes are
 not an arbitrary/universal decoder-completeness claim.
 
