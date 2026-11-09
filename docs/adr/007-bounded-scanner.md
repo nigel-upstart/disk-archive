@@ -120,10 +120,19 @@ confirmation expressions**. A confirmed decoded secret returns static
 `UnsupportedEncoding`: G must retain the original and perform no upload. No
 incorrect raw-offset finding or partial decoded redaction is emitted. A secret
 found literally elsewhere does not exempt an encoded copy: literal redaction
-cannot remove base64/percent/UTF16 carriers. This conservative preflight can retain
-a direct secret with unrelated escapes too; allowing that case requires proper
-transformed-span provenance, not a literal-presence shortcut. Issue #18 retains
-offset-aware redaction work, not permission to upload known secrets.
+cannot remove base64/percent/UTF16 carriers. JSON/percent unescaping now carries
+bounded, value-free provenance for contiguous **unchanged** byte runs only. A
+confirmed decoded secret may proceed to normal raw redaction only if its exact
+source range is an actual nonoverlapping raw match's secret capture under the
+same native rule. Context delimiters may transform, but the sensitive bytes
+must be unchanged and selected at that same raw source span. The rule must have
+the native newline-restart certificate; the raw full match must be interior to
+the original carrier (never justified by an artificial beginning/end). Synthesized
+wrapped-carrier seeds have no such provenance. Neither Base64 nor UTF16 inherits
+unchanged runs. Every decoded match is checked, including hidden duplicates of
+visible secrets. No transformed secret is emitted with guessed offsets. Issue
+#18 retains general encoded-span redaction work; genuinely transformed secrets
+and ambiguous source/context proofs still block.
 
 Carrier, canonical encoded buffer and decoded-buffer sizes are at most 1 MiB
 each. These are allocation ceilings, **not guaranteed accepted input sizes**.
@@ -143,9 +152,13 @@ work limits. This availability tradeoff avoids silently uploading recoverable
 wrapped secrets; offset-aware/provenance work remains #18.
 
 Each bounded carrier allows 1,048,576 decode attempts, 64 MiB of examined candidate
-bytes and four decoding levels. Physical-line and joined-run probes share that
-budget. The larger attempt cap admits dense bounded records while byte/depth caps
-remain fixed. Exceeding any limit returns `Budget`, never clean success. Clean
+bytes and eight decoding levels. Eight admits the benign five-stage
+JSON/JSON/percent/Base64/UTF16 control while preserving a strict nesting bound.
+Physical-line and joined-run probes share that budget; inert escape probes and
+layout joining consume work, not a decoding level. Repeated raw provenance
+confirmation also charges the examined source bytes. Each unescape/projection
+retains at most 4,096 value-free runs (at most two lists per live level), failing
+closed on exhaustion. Carrier/expansion/work ceilings remain unchanged. Exceeding any limit returns `Budget`, never clean success. Clean
 base64/UTF16 within these caps is not blanket rejected. These bounded probes are
 not an arbitrary/universal decoder-completeness claim.
 
