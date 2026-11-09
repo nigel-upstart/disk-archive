@@ -12,7 +12,7 @@ disk-archive-scanner = { version = "0.1.0", path = "../scanner" }
 disk-archive-storage = { version = "0.1.0", path = "../storage" }
 disk-archive-core = { version = "0.1.0", path = "../core" }
 disk-archive-verified = { version = "0.1.0", path = "../verified" }
-rusqlite = { version = "0.40.2", default-features = false, features = [
+rusqlite = { version = "0.41.1", default-features = false, features = [
   "libsqlite3-sys",
   "bundled",
 ] }
