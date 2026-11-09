@@ -121,6 +121,7 @@ async fn concurrent_cloned_stores_share_one_payload_admission_domain() -> TestRe
     .await?;
     assert!(store.payload_bytes_reserved() > 0);
     assert!(store.payload_bytes_reserved() <= u64::try_from(limits.in_flight_bytes)?);
+    assert!(!mock.all_part_uploads_aborted()?);
     cancel.cancel();
     for task in jobs {
         assert!(task.await?.is_err());
@@ -129,7 +130,12 @@ async fn concurrent_cloned_stores_share_one_payload_admission_domain() -> TestRe
     // Hyper may retain a cancelled request-body frame until its connection retires.
     // That storage remains CHARGED, never recycled past the global ceiling.
     assert!(store.payload_bytes_reserved() <= u64::try_from(limits.in_flight_bytes)?);
-    assert_eq!(mock.created(), mock.aborted());
+    // A concurrent create can succeed at the server while cancellation drops
+    // its response before TM learns the ID (documented UploadHandle::abort gap).
+    // Compare IDs known to the client through observed parts, not create/abort
+    // totals that cannot distinguish that window from a cleanup failure.
+    assert!(mock.all_part_uploads_aborted()?);
+    assert!(mock.aborted() <= mock.created());
     mock.shutdown().await?;
     Ok(())
 }

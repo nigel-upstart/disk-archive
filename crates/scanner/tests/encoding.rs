@@ -584,6 +584,33 @@ fn provenance_does_not_invent_boundaries_or_exempt_multiline_rules()
 }
 
 #[test]
+fn skipped_boundary_match_cannot_certify_later_nonoverlapping_secret()
+-> Result<(), Box<dyn std::error::Error>> {
+    // The carrier-local anchored alternative consumes only the escape, whereas
+    // whole-input matching consumes its following `abc` too, suppressing `bcd`.
+    for chunk in [1, 2, 7, 64 * 1024] {
+        let db = RulesDatabase::from_rules(vec![Rule::new(RuleSyntax::new(
+            "fixture.skipped-boundary",
+            "Synthetic suppressed raw match",
+            r"\A\\n|(?P<PREFIX>\\n)abc|(?P<TOKEN>bcd)",
+        ))])?;
+        let scanner = Scanner::new(
+            db,
+            Limits {
+                chunk_bytes: chunk,
+                ..Limits::default()
+            },
+        )?;
+        let input = b"!\n\\nabcd !\n";
+        assert_eq!(
+            scanner.scan(input.as_slice(), |_| Ok(())),
+            Err(ScanError::UnsupportedEncoding)
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn multiline_utf16_uses_the_same_native_multiline_expression()
 -> Result<(), Box<dyn std::error::Error>> {
     let db = RulesDatabase::from_rules(vec![Rule::new(RuleSyntax::new(

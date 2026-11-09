@@ -453,23 +453,26 @@ impl Scanner {
                 // earlier raw alternative could otherwise suppress this span.
                 let mut original = None;
                 for captures in originals.as_mut().ok_or(ScanError::Engine)? {
+                    let full = captures.get(0).ok_or(ScanError::Engine)?;
+                    // Even a skipped match at a fabricated carrier boundary
+                    // can suppress different later matches in the raw stream.
+                    if full.start() == 0 || full.end() >= origin.source.len() {
+                        return Ok(true);
+                    }
                     let raw = kingfisher_scanner::primitives::find_secret_capture_with_group(
                         regex,
                         &captures,
                         rule.betterleaks_secret_group(),
                     );
                     if raw.end() >= range.end {
-                        original = Some((
-                            captures.get(0).ok_or(ScanError::Engine)?.range(),
-                            raw.range(),
-                        ));
+                        original = Some(raw.range());
                         break;
                     }
                 }
-                let Some((full, raw)) = original else {
+                let Some(raw) = original else {
                     return Ok(true);
                 };
-                if raw != range || full.start == 0 || full.end >= origin.source.len() {
+                if raw != range {
                     return Ok(true);
                 }
                 // The secret itself is unchanged and independently selected
