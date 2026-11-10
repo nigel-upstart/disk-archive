@@ -300,6 +300,10 @@ impl MeasuringProxy {
                 || state.active != 0
                 || state.bodies != 0
                 || state.routes.is_empty()
+                // Every binding is unique and each observed route must find
+                // one below; equal counts make the coverage one-to-one, so an
+                // independently verified but unobserved object cannot pass.
+                || state.routes.len() != bindings.routes.len()
             {
                 return Err(ObservationError);
             }

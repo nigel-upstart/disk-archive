@@ -93,7 +93,10 @@ jobs:
       - name: Explain failed-closed collection
         if: failure()
         run: echo 'Performance validation failed. Missing observations or baselines are not a passing gate; no baseline was created or raised.' >> "$GITHUB_STEP_SUMMARY"
+      # Regressions and missing baselines exit nonzero AFTER writing reports;
+      # keep their samples/fingerprints. Upload never changes the job status.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
         with:
           name: performance-metadata
           path: |

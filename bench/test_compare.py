@@ -207,6 +207,22 @@ class ComparatorTests(unittest.TestCase):
         self.assertFalse(decision["metrics"]["wall"]["gated"])
         self.assertIn("NOT gated", decision["metrics"]["wall"]["reason"])
 
+    def test_cpu_redistribution_is_not_a_regression_but_total_cpu_gates(self):
+        policy = {"metrics": {"cpu_total": {"kind": "statistical", "tolerance": 0.1}, "cpu_user": {"kind": "advisory", "tolerance": 0.1}, "cpu_system": {"kind": "advisory", "tolerance": 0.1}}}
+        baseline = report()
+        baseline["samples"] = {"cpu_user": [90.0] * 10, "cpu_system": [10.0] * 10, "cpu_total": [100.0] * 10}
+        current = copy.deepcopy(baseline)
+        current["samples"] = {"cpu_user": [89.0] * 10, "cpu_system": [11.5] * 10, "cpu_total": [100.5] * 10}
+        decision = compare.compare(current, baseline, policy, public=True)
+        self.assertFalse(decision["fail"])
+        self.assertEqual(decision["metrics"]["cpu_system"]["status"], "advisory-regressed")
+        self.assertFalse(decision["metrics"]["cpu_system"]["gated"])
+        self.assertEqual(decision["metrics"]["cpu_total"]["status"], "unchanged")
+        self.assertTrue(decision["metrics"]["cpu_total"]["gated"])
+        current["samples"]["cpu_total"] = [120.0] * 10
+        decision = compare.compare(current, baseline, policy, public=True)
+        self.assertEqual(decision["metrics"]["cpu_total"]["status"], "rerun-required")
+
     def test_semantic_corpus_change_requires_review_not_autorefresh(self):
         baseline = report()
         current = copy.deepcopy(baseline)

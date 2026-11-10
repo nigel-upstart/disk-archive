@@ -93,12 +93,18 @@ tolerance = 0.02
 kind = "statistical"
 tolerance = 0.10
 
-[metrics.cpu_user]
+# Issue #7: CPU time is gated as user + system. The components are reported
+# but never gated, so user/kernel redistribution is not a false regression.
+[metrics.cpu_total]
 kind = "statistical"
 tolerance = 0.10
 
+[metrics.cpu_user]
+kind = "advisory"
+tolerance = 0.10
+
 [metrics.cpu_system]
-kind = "statistical"
+kind = "advisory"
 tolerance = 0.10
 
 [metrics.peak_rss_bytes]

@@ -30,6 +30,8 @@ def worker(command: list[str], timeout: float) -> dict[str, object]:
         "wall": elapsed,
         "cpu_user": usage.ru_utime,
         "cpu_system": usage.ru_stime,
+        # Issue #7 gates CPU time as user + system; components stay advisory.
+        "cpu_total": usage.ru_utime + usage.ru_stime,
         "peak_rss_bytes": usage.ru_maxrss * (1 if sys.platform == "darwin" else 1024),
         "voluntary_context_switches": usage.ru_nvcsw,
         "involuntary_context_switches": usage.ru_nivcsw,

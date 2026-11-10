@@ -6,11 +6,12 @@ callers must collect SDK/pipeline outputs, strace, getrusage and Callgrind first
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 import re
 
 from compare import SEMANTIC_EXACT, TOOLCHAIN, HARDWARE, SEMANTICS, policy_options, samples, validate_exact
 
-RESOURCES = ("wall", "cpu_user", "cpu_system", "peak_rss_bytes", "voluntary_context_switches", "involuntary_context_switches")
+RESOURCES = ("wall", "cpu_user", "cpu_system", "cpu_total", "peak_rss_bytes", "voluntary_context_switches", "involuntary_context_switches")
 CACHE_EVENTS = ("Ir", "I1mr", "D1mr", "D1mw", "ILmr", "DLmr", "DLmw")
 KERNELS = ("redaction", "scanner", "gzip_sha256")
 ADVISORY = ("manifest_bytes", "control_bytes", "wire_body_bytes", "history_rows", "verified_archives", "verified_retained", "catalog_init_seconds")
@@ -61,6 +62,8 @@ def assemble(fingerprint: dict, resources: list[dict], applications: list[dict],
             raise ValueError("resource sampler cannot fabricate application counters")
         for name in RESOURCES:
             measured[name].append(samples([usage[name]])[0])
+        if not math.isclose(usage["cpu_total"], usage["cpu_user"] + usage["cpu_system"], rel_tol=1e-9, abs_tol=1e-9):
+            raise ValueError("gated CPU total must equal its observed user + system components")
         if not isinstance(app, dict) or set(app) != {"schema", "complete", "binary_sha256", "exact", "advisory"} or type(app["schema"]) is not int or app["schema"] != 1 or app["complete"] is not True:
             raise ValueError("complete verified application receipt required")
         if digest(app["binary_sha256"]) != binary:

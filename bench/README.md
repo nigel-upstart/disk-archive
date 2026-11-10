@@ -108,6 +108,11 @@ comparison CLI exits **75** while confirmation is required, never success. Instr
 and cache regressions never rerun. Policy controls bounded bootstrap rounds and
 minimum sample count. Tolerances remain provisional until the hosted noise study.
 
+CPU time is gated as `cpu_total` (user + system, per issue #7). The `cpu_user` and
+`cpu_system` components are kind `advisory`: sampled and reported (`advisory-regressed`
+when their interval exceeds tolerance) but never gated, so redistribution between user
+and kernel work is not a false regression.
+
 CPU/nproc mismatch makes statistical metrics explicitly advisory with `gated=false`;
 the summary never claims they passed a gate. Compiler/LLVM/flags/profile/target,
 Valgrind/Gungraun/cache configuration or rules/corpus/workload mismatch requires an

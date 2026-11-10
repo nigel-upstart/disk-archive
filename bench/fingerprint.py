@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from pathlib import Path
 import platform
@@ -10,7 +11,14 @@ import subprocess
 import tomllib
 
 
-BUILD_FLAGS = ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CFLAGS", "CXXFLAGS", "CARGO_BUILD_TARGET", "CARGO_PROFILE_BENCH_LTO", "CARGO_PROFILE_BENCH_CODEGEN_UNITS", "CARGO_PROFILE_RELEASE_LTO", "CARGO_PROFILE_RELEASE_CODEGEN_UNITS", "CARGO_PROFILE_RELEASE_OPT_LEVEL", "CARGO_PROFILE_RELEASE_DEBUG", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER")
+BUILD_FLAGS = ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CFLAGS", "CXXFLAGS", "CC", "CXX", "CARGO_INCREMENTAL", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER")
+# Every profile override (debug-assertions, overflow-checks, lto, ...), target
+# rustflags/linkers and build settings can change generated code. Prefixes, not
+# an allowlist, so a new override cannot silently share a fingerprint.
+BUILD_PREFIXES = ("CARGO_PROFILE_", "CARGO_TARGET_", "CARGO_BUILD_")
+# Scheduling/output locations that never affect generated instructions.
+NON_CODEGEN = {"CARGO_TARGET_DIR", "CARGO_BUILD_JOBS", "CARGO_BUILD_TARGET_DIR"}
+CONFIG_FILES = (".cargo/config.toml", ".cargo/config")
 CACHE_CONFIGURATION = "I1=32768,8,64;D1=32768,8,64;LL=8388608,16,64;cache-sim=yes;separate-threads=no"
 
 
@@ -27,10 +35,26 @@ def rules_revision(root: Path) -> str:
     return revision
 
 
-def flag_digest(environment: dict[str, str]) -> str:
-    # Compiler arguments can contain local paths/configuration. Hash only the
-    # allowlisted build-affecting fields; never persist them or an env dump.
-    value = "\0".join(name + "=" + environment.get(name, "") for name in BUILD_FLAGS)
+def build_variable(name: str) -> bool:
+    return name not in NON_CODEGEN and (name in BUILD_FLAGS or name.startswith(BUILD_PREFIXES))
+
+
+def build_configuration(root: Path) -> str:
+    """Committed/user Cargo settings that alter codegen: root profiles and config files."""
+    manifest = tomllib.loads((root / "Cargo.toml").read_text())
+    parts = ["profile=" + json.dumps(manifest.get("profile", {}), sort_keys=True)]
+    home = Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo"))
+    for path in [root / name for name in CONFIG_FILES] + [home / "config.toml", home / "config"]:
+        if path.is_file():
+            parts.append(path.name + "=" + hashlib.sha256(path.read_bytes()).hexdigest())
+    return "\0".join(parts)
+
+
+def flag_digest(environment: dict[str, str], configuration: str = "") -> str:
+    # Compiler arguments and config can contain local paths. Hash only the
+    # build-affecting fields; never persist them or an environment dump.
+    fields = sorted((name, value) for name, value in environment.items() if build_variable(name))
+    value = "\0".join(name + "=" + item for name, item in fields) + "\0\0" + configuration
     return hashlib.sha256(value.encode()).hexdigest()
 
 
@@ -72,7 +96,7 @@ def collect(root: Path, *, profile: str = "bench") -> dict[str, object]:
         "rustc": compiler,
         "llvm": fields["LLVM version"],
         "target": target,
-        "flags": flag_digest({name: os.environ.get(name, "") for name in BUILD_FLAGS}),
+        "flags": flag_digest(dict(os.environ), build_configuration(root)),
         "profile": profile,
         "valgrind": tool(["valgrind", "--version"], root),
         "gungraun": tool(["gungraun-runner", "--version"], root),

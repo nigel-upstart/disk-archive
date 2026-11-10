@@ -16,7 +16,7 @@ def inputs():
                        source_commit="d" * 40, source_dirty=False, runner_image="test-image", runner_image_version="test-version",
                        memory_bytes=4096, kernel="test-kernel", workers=2, cpu_jobs=2, queue_capacity=2,
                        max_file_bytes=8 * 1024 * 1024, worker_binary_sha256="e" * 64)
-    resources = [dict({name: index + 1 for name in RESOURCES}, includes_process_startup=True, application_counters=None) for index in range(10)]
+    resources = [dict({name: index + 1 for name in RESOURCES}, cpu_total=2 * (index + 1), includes_process_startup=True, application_counters=None) for index in range(10)]
     app = dict(schema=1, complete=True, binary_sha256="e" * 64,
                exact=dict(process_spawns=0, bytes_uploaded=100, peak_temp_bytes=200, requests={"single/archive-000001": 2, "single/manifest-000000": 1}),
                advisory=dict(zip(ADVISORY, [10, 0, 110, 2, 1, 1, 0.1], strict=True)))
@@ -27,13 +27,19 @@ def inputs():
 
 
 class AssemblyTests(unittest.TestCase):
+    def test_cpu_total_must_equal_observed_components(self):
+        args = inputs()
+        args[1][0]["cpu_total"] += 1
+        with self.assertRaises(ValueError):
+            assemble(*args)
+
     def test_complete_observations_compare_record_only_without_baseline(self):
         args = inputs()
         report = assemble(*args)
         decision = compare(report, None, args[-1])
         self.assertFalse(decision["fail"])
         self.assertEqual(decision["mode"], "record-only")
-        self.assertEqual(len(report["samples"]), 27)
+        self.assertEqual(len(report["samples"]), 28)
         self.assertEqual(report["observations"]["applications"], args[2])
 
     def test_resource_peak_variation_is_preserved_not_forged_equal(self):

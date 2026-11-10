@@ -15,6 +15,7 @@ class ObservationTests(unittest.TestCase):
         sample = observe.observe([sys.executable, "-c", "pass"], timeout=10)
         self.assertGreater(sample["wall"], 0)
         self.assertGreater(sample["peak_rss_bytes"], 0)
+        self.assertAlmostEqual(sample["cpu_total"], sample["cpu_user"] + sample["cpu_system"])
         self.assertIsNone(sample["application_counters"])
         self.assertTrue(sample["includes_process_startup"])
 

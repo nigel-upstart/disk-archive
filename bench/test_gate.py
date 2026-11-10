@@ -71,9 +71,12 @@ class GateTests(unittest.TestCase):
     def test_policy_requires_real_kernel_events_and_all_resource_metrics(self):
         policy = tomllib.loads(Path(gate.__file__).with_name("policy.toml").read_text())
         expected = {f"{kernel}.{event}" for kernel in ("redaction", "scanner", "gzip_sha256") for event in ("Ir", "I1mr", "D1mr", "D1mw", "ILmr", "DLmr", "DLmw")}
-        expected.update(("wall", "cpu_user", "cpu_system", "peak_rss_bytes", "voluntary_context_switches", "involuntary_context_switches"))
+        expected.update(("wall", "cpu_user", "cpu_system", "cpu_total", "peak_rss_bytes", "voluntary_context_switches", "involuntary_context_switches"))
         self.assertEqual(set(policy["metrics"]), expected)
         self.assertFalse(policy["noise_study_complete"])
+        # Issue #7 gates CPU as user + system; components are advisory only.
+        self.assertEqual(policy["metrics"]["cpu_total"]["kind"], "statistical")
+        self.assertEqual({policy["metrics"][name]["kind"] for name in ("cpu_user", "cpu_system")}, {"advisory"})
 
     def fixtures(self, root):
         current = root / "current.json"

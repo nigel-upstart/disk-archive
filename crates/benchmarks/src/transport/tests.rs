@@ -203,6 +203,20 @@ async fn unknown_routes_and_class_contradictions_never_emit_stats()
 }
 
 #[tokio::test]
+async fn bound_but_unobserved_objects_never_emit_partial_stats()
+-> Result<(), Box<dyn std::error::Error>> {
+    let sink = Sink::start().await?;
+    let proxy = MeasuringProxy::start(&sink.endpoint).await?;
+    send(proxy.endpoint(), "PUT", "/bucket/first", b"actual", "").await?;
+    let mut bindings = Bindings::default();
+    bindings.archive("/bucket/first", 0, SizeClass::Single)?;
+    bindings.archive("/bucket/second", 1, SizeClass::Single)?;
+    assert_eq!(proxy.finish(&bindings).await, Err(ObservationError));
+    sink.close().await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn malformed_body_query_and_incomplete_body_poison_measurements()
 -> Result<(), Box<dyn std::error::Error>> {
     for (path, body, headers) in [

@@ -11,6 +11,9 @@ SEMANTIC_EXACT = ("process_spawns", "bytes_uploaded", "requests")
 RESOURCE_PEAK = "peak_temp_bytes"
 TOOLCHAIN = ("rustc", "llvm", "flags", "profile", "target", "valgrind", "gungraun", "cache_configuration")
 HARDWARE = ("cpu_model", "nproc")
+# "advisory" metrics are sampled and reported like statistical ones but never gate
+# (e.g. user/system components whose redistribution is not a CPU regression).
+SAMPLED = ("statistical", "advisory")
 SEMANTICS = ("corpus_revision", "rules_revision")
 
 
@@ -63,7 +66,7 @@ def policy_options(policy: dict[str, Any]) -> tuple[int, int]:
         raise ValueError("measurement policy cannot be empty")
     for configuration in policy["metrics"].values():
         tolerance = configuration["tolerance"]
-        if configuration["kind"] not in ("deterministic", "statistical") or isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)) or not math.isfinite(tolerance) or tolerance < 0:
+        if configuration["kind"] not in ("deterministic",) + SAMPLED or isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)) or not math.isfinite(tolerance) or tolerance < 0:
             raise ValueError("invalid metric configuration")
     return rounds, minimum
 
@@ -72,9 +75,9 @@ def observations(report: dict[str, Any], policy: dict[str, Any], rounds: int, mi
     result = {}
     for name, configuration in policy["metrics"].items():
         values = samples(report["samples"][name])
-        if configuration["kind"] == "statistical" and len(values) < minimum:
+        if configuration["kind"] in SAMPLED and len(values) < minimum:
             raise ValueError("insufficient statistical samples")
-        interval = median_interval(values, rounds=rounds) if configuration["kind"] == "statistical" else (statistics.median(values),) * 2
+        interval = median_interval(values, rounds=rounds) if configuration["kind"] in SAMPLED else (statistics.median(values),) * 2
         result[name] = {"status": "record-only", "gated": False, "new_median": statistics.median(values), "interval": interval, "sample_count": len(values)}
     return result
 
@@ -168,10 +171,13 @@ def compare(current: dict[str, Any], baseline: dict[str, Any] | None, policy: di
             decision["status"] = "refresh-required-incompatible"
             refresh(result, "compiler-tools-cache-flags-or-profile-changed", public)
             continue
-        if kind == "statistical" and not matching(fingerprint, old_fingerprint, HARDWARE):
+        if kind in SAMPLED and not matching(fingerprint, old_fingerprint, HARDWARE):
             decision.update(status="advisory-incompatible", gated=False, reason="CPU/nproc mismatch; statistical metric NOT gated")
             continue
         regressed = decision["interval"][0] > threshold
+        if kind == "advisory":
+            decision.update(status="advisory-regressed" if regressed else "unchanged", gated=False, reason="component reported only; its total is the gated metric")
+            continue
         decision.update(status="unchanged", gated=public)
         if regressed and not public:
             decision["status"] = "advisory-record-only"
