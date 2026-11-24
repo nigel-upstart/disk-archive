@@ -94,7 +94,7 @@ jobs:
         if: failure()
         run: echo 'Performance validation failed. Missing observations or baselines are not a passing gate; no baseline was created or raised.' >> "$GITHUB_STEP_SUMMARY"
       # Regressions and missing baselines exit nonzero AFTER writing reports;
-      # keep their samples/fingerprints. Upload never changes the job status.
+      # keep their samples/fingerprints even when the gate fails.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:
@@ -103,5 +103,7 @@ jobs:
             target/perf/*.json
             target/perf/summary.md
             target/perf-kernels.json
-          if-no-files-found: error
+          # Reports are mandatory for a passing run; an earlier failure may
+          # legitimately stop before writing any, so do not add a second error.
+          if-no-files-found: ${{ job.status == 'success' && 'error' || 'warn' }}
           retention-days: 14

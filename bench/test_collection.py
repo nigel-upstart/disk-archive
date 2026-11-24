@@ -4,6 +4,7 @@ from contextlib import ExitStack
 import json
 import os
 from pathlib import Path
+from subprocess import CompletedProcess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -89,6 +90,31 @@ class FunctionalCollectorTests(unittest.TestCase):
 
 
 class KernelTests(unittest.TestCase):
+    def test_collect_invokes_the_built_runner_in_bench_mode(self):
+        with tempfile.TemporaryDirectory() as temporary, ExitStack() as stack:
+            root = Path(temporary)
+            binary = root / "callgrind-exact-hash"
+            binary.write_bytes(b"synthetic stand-in executable")
+            build_receipt, output = root / "build.json", root / "kernels.json"
+            environment = dict(source_commit="a" * 40)
+            stack.enter_context(patch.object(kernels.sys, "platform", "linux"))
+            stack.enter_context(patch.object(kernels, "fingerprint", return_value=environment))
+            load_build = stack.enter_context(patch.object(kernels, "load_build", return_value={"callgrind": binary}))
+            runner = stack.enter_context(patch.object(kernels.subprocess, "run"))
+
+            def simulate_gungraun(argv, **kwargs):
+                # Test mode succeeds but leaves stdout empty, just as the failed CI job did.
+                stdout = self.stdout(self.complete()) if "--bench" in argv and "--test" not in argv else b""
+                return CompletedProcess(argv, 0, stdout, b"")
+
+            runner.side_effect = simulate_gungraun
+            kernels.collect(build_receipt, output)
+
+            load_build.assert_called_once_with(build_receipt, environment)
+            runner.assert_called_once()
+            self.assertEqual(runner.call_args.args[0], [str(binary), "--bench", "--output-format=json"])
+            self.assertEqual(kernels.load(output, environment)["kernels"], kernels.counts(self.stdout(self.complete())))
+
     def test_tool_failure_classification_never_returns_raw_output(self):
         for payload, expected in [(b"unexpected argument private-value", "runner-arguments"),
                                   (b"unrecognised instruction private-value", "unsupported-instruction"),

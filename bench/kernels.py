@@ -143,7 +143,9 @@ def collect(build: Path, output: Path) -> None:
         temporary = Path(owned)
         # Profiles and summaries contain paths/commands; only validated counts leave this scope.
         settings = dict(os.environ, GUNGRAUN_HOME=str(temporary))
-        result = subprocess.run([str(binary), "--output-format=json"], cwd=root, env=settings, check=False, timeout=1200,
+        # Cargo bench normally supplies --bench. Without it this direct invocation
+        # runs Gungraun's test mode, which succeeds without Valgrind or summaries.
+        result = subprocess.run([str(binary), "--bench", "--output-format=json"], cwd=root, env=settings, check=False, timeout=1200,
                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         # Only fixed classifications and summary counts are reported;
         # tool output is never forwarded or written to a log/artifact.
