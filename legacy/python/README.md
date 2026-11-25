@@ -1,10 +1,13 @@
 # Sanitized Python reference (temporary)
 
-Owner: disk-archive maintainers · Status: reference only · Updated: 2026-10-21
+Owner: disk-archive maintainers · Status: reference only · Updated: 2026-11-25
 
 This is an allowlisted copy of the legacy Python source and its redactor test,
 not a supported archiver. No runtime data, dependency environment, lockfile,
 production README, state database, logs, bundles, or session contents were copied.
+It supports parity testing while Rust is developed to replace the Python archiver.
+Python is the fallback during that transition, but this sanitized copy cannot be
+used as the fallback: its CLI is disabled and it has no runtime configuration.
 Remove this directory once the Rust port proves parity.
 
 ## Intentional deviations

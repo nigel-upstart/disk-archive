@@ -1,14 +1,22 @@
 # disk-archive
 
-Owner: disk-archive maintainers · Status: implementation in progress · Updated: 2026-10-21
+Owner: disk-archive maintainers · Status: implementation in progress · Updated: 2026-11-25
 
-A Rust port of a session-log archiver: discover old files, scan and redact secrets,
-verify redaction, compress and upload to S3, verify the object, then delete locally.
-The Rust application is not ready for use. Do not run it on real session roots yet.
+The Rust application is under development to replace the Python session-log
+archiver. It discovers old files, scans and redacts secrets, verifies redaction,
+compresses and uploads to S3, verifies the object, then deletes the local file.
+Continue developing and testing Rust until it has working parity with the Python
+archiver, including the deliberate safety improvements below. Python is a fallback
+while Rust reaches that point, not the target for new archiver development.
+
+The Rust CLI can be built and tested on synthetic inputs, but is not ready to run
+on real session roots. The sanitized Python copy in this repository is a test
+reference, not a runnable fallback: its CLI is disabled. Do not operate on a
+running Python archiver or its files while developing the Rust app.
 
 ## Safety contract
 
-The port will require verified upload before deletion, injective S3 object keys,
+The Rust app requires verified upload before deletion, injective S3 object keys,
 and a change-nothing `--dry-run`. Secret values must never enter logs or state.
 The legacy reference does **not** satisfy all these guarantees; its CLI is disabled.
 
@@ -25,19 +33,34 @@ Never commit `.env`, runtime state, logs, archives, or actual session content.
 
 ## Configuration
 
-[`.env.example`](.env.example) contains placeholders only. The Rust port will use
+[`.env.example`](.env.example) contains placeholders only. The Rust app uses
 `DISK_ARCHIVE_*` environment variables and gitignored env files. Bucket and prefix
 are required, with no defaults. Env-file lookup is `--env-file`, then
-`$XDG_CONFIG_HOME/disk-archive/.env`, then `./.env`. Parsing and the final optional
-settings will land with the config module; this is not a runnable setup guide.
+`$XDG_CONFIG_HOME/disk-archive/.env`, then `./.env`. See the
+[configuration contract](crates/core/README.md) for supported settings. This is
+not a production setup or migration guide.
 
 ## Development
 
 The [temporary plan](plan/PLAN.md) tracks sequencing; [GitHub issues](https://github.com/nigel-upstart/disk-archive/issues)
-are authoritative. Build tooling, verified kernels, usage, and migration guidance
-will land in subsequent PRs. Every PR must complete the review loop before merge.
+are authoritative. Parity is broader than matching redactor output: it also
+requires confidence in discovery, scanning, verification, upload, recovery, and
+deletion behavior, with the safety changes above. Real-S3 acceptance and migration
+guidance remain work to complete before use on real session roots. Every PR must
+complete the review loop before merge.
 
-For now, the stdlib-only synthetic redaction parity check is:
+For a local CLI smoke test, first install the pinned development tools and native
+prerequisites described by `task doctor`, then run:
+
+```sh
+cargo build --locked -p disk-archive --bin disk-archive
+python3 crates/archiver/tests/cli.py --binary target/debug/disk-archive
+```
+
+The CLI tests use temporary synthetic files and configuration, verify that dry-run
+does not modify them, and make no AWS calls. They do not establish full parity.
+
+The stdlib-only synthetic redaction parity check is:
 
 ```sh
 python3 legacy/python/tests/golden.py --check
