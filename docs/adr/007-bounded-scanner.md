@@ -126,8 +126,9 @@ confirmed decoded secret may proceed to normal raw redaction only if its exact
 source range is an actual nonoverlapping raw match's secret capture under the
 same native rule. Context delimiters may transform, but the sensitive bytes
 must be unchanged and selected at that same raw source span. The rule must have
-the native newline-restart certificate; the raw full match must be interior to
-the original carrier (never justified by an artificial beginning/end). Synthesized
+the native newline-restart certificate and cannot evaluate an assertion after
+consuming LF. Every raw full match examined must be interior to the original
+carrier (never justified by an artificial beginning/end). Synthesized
 wrapped-carrier seeds have no such provenance. Neither Base64 nor UTF16 inherits
 unchanged runs. Every decoded match is checked, including hidden duplicates of
 visible secrets. No transformed secret is emitted with guessed offsets. Issue

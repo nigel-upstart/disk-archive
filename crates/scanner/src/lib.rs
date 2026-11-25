@@ -160,6 +160,7 @@ pub struct Scanner {
     limits: Limits,
     guard: Option<SpanGuard>,
     labels: Vec<String>,
+    carrier_boundary_invariant: Vec<bool>,
 }
 
 impl Scanner {
@@ -212,6 +213,7 @@ impl Scanner {
             labels.push(label);
         }
         let mut unbounded = Vec::new();
+        let mut carrier_boundary_invariant = Vec::with_capacity(database.num_rules());
         for (index, regex) in database.anchored_regexes().iter().enumerate() {
             let hir = regex_syntax::ParserBuilder::new()
                 .unicode(false)
@@ -222,11 +224,14 @@ impl Scanner {
             if hir.properties().minimum_len().is_none_or(|size| size == 0) {
                 return Err(ScanError::UnsupportedRules);
             }
+            let line_restart_safe = database.confirmation_line_restart_safe(index);
+            carrier_boundary_invariant
+                .push(line_restart_safe && !encoding::can_assert_after_lf(&hir, false));
             if let Some(size) = database.confirmation_match_maximum_len(index) {
                 if size > limits.match_bytes {
                     return Err(ScanError::RuleTooLarge);
                 }
-            } else if !database.confirmation_line_restart_safe(index) {
+            } else if !line_restart_safe {
                 unbounded.push(regex.as_str().to_owned());
             }
         }
@@ -236,6 +241,7 @@ impl Scanner {
             limits,
             guard,
             labels,
+            carrier_boundary_invariant,
         })
     }
 
@@ -433,6 +439,12 @@ impl Scanner {
             if !selected.get(index).copied().ok_or(ScanError::Engine)? {
                 continue;
             }
+            let boundary_invariant = self
+                .carrier_boundary_invariant
+                .get(index)
+                .copied()
+                .ok_or(ScanError::Engine)?;
+            let provenance = provenance.filter(|_| boundary_invariant);
             let mut originals = provenance.map(|origin| regex.captures_iter(origin.source));
             for captures in regex.captures_iter(bytes) {
                 let rule = self.database.rules().get(index).ok_or(ScanError::Engine)?;
@@ -441,9 +453,7 @@ impl Scanner {
                     &captures,
                     rule.betterleaks_secret_group(),
                 );
-                let Some(origin) =
-                    provenance.filter(|_| self.database.confirmation_line_restart_safe(index))
-                else {
+                let Some(origin) = provenance else {
                     return Ok(true);
                 };
                 let Some(range) = origin.original(secret.range()) else {

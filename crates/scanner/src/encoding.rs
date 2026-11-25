@@ -5,6 +5,7 @@ use base64::{
     engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig},
 };
 use kingfisher_vectorscan::BlockScanner;
+use regex_syntax::hir::{Class, Hir, HirKind};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{ScanError, Scanner};
@@ -14,6 +15,49 @@ const DECODE_BYTES: usize = 64 * 1024 * 1024;
 const CANDIDATES: usize = 1_048_576;
 const DEPTH: usize = 8;
 const PROVENANCE_RUNS: usize = 4096;
+
+// The native restart certificate rules out consuming bytes after LF. An
+// assertion after LF can still see the next record and change which earlier
+// alternative wins. Follow possible suffixes to exclude that case as well.
+pub(super) fn can_assert_after_lf(hir: &Hir, assertion_follows: bool) -> bool {
+    if !assertion_follows && hir.properties().look_set().is_empty() {
+        return false;
+    }
+    match hir.kind() {
+        HirKind::Empty | HirKind::Look(_) => false,
+        HirKind::Literal(literal) => assertion_follows && literal.0.contains(&b'\n'),
+        HirKind::Class(class) => {
+            assertion_follows
+                && match class {
+                    Class::Bytes(class) => class
+                        .iter()
+                        .any(|range| range.start() <= b'\n' && b'\n' <= range.end()),
+                    Class::Unicode(class) => class
+                        .iter()
+                        .any(|range| range.start() <= '\n' && '\n' <= range.end()),
+                }
+        }
+        HirKind::Capture(capture) => can_assert_after_lf(&capture.sub, assertion_follows),
+        HirKind::Alternation(parts) => parts
+            .iter()
+            .any(|part| can_assert_after_lf(part, assertion_follows)),
+        HirKind::Concat(parts) => {
+            let mut assertion_follows = assertion_follows;
+            for part in parts.iter().rev() {
+                if can_assert_after_lf(part, assertion_follows) {
+                    return true;
+                }
+                assertion_follows |= !part.properties().look_set().is_empty();
+            }
+            false
+        }
+        HirKind::Repetition(repetition) => {
+            let repeats = repetition.max.is_none_or(|maximum| maximum > 1);
+            let repeated_assertion = repeats && !repetition.sub.properties().look_set().is_empty();
+            can_assert_after_lf(&repetition.sub, assertion_follows || repeated_assertion)
+        }
+    }
+}
 
 struct Run {
     decoded: std::ops::Range<usize>,

@@ -611,6 +611,43 @@ fn skipped_boundary_match_cannot_certify_later_nonoverlapping_secret()
 }
 
 #[test]
+fn terminal_lf_assertion_cannot_certify_a_suppressed_raw_secret()
+-> Result<(), Box<dyn std::error::Error>> {
+    // The next record makes the word boundary after LF succeed in the raw
+    // stream. That earlier alternative consumes the later token's span.
+    let input = b"!\\n bcd !\nword\n";
+    for chunk in [1, 2, 7, 64 * 1024] {
+        for (pattern, expected) in [
+            (
+                r"(?P<PREFIX>!\\n)[^\n]{0,32}\n\b|(?P<TOKEN>bcd)",
+                Err(ScanError::UnsupportedEncoding),
+            ),
+            (r"(?P<PREFIX>!\\n)[^\n]{0,32}\b\n|(?P<TOKEN>bcd)", Ok(1)),
+        ] {
+            let db = RulesDatabase::from_rules(vec![Rule::new(RuleSyntax::new(
+                "fixture.lf-assertion",
+                "Synthetic record boundary",
+                pattern,
+            ))])?;
+            let scanner = Scanner::new(
+                db,
+                Limits {
+                    chunk_bytes: chunk,
+                    ..Limits::default()
+                },
+            )?;
+            assert_eq!(
+                scanner
+                    .scan(input.as_slice(), |_| Ok(()))
+                    .map(|report| report.findings),
+                expected
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn multiline_utf16_uses_the_same_native_multiline_expression()
 -> Result<(), Box<dyn std::error::Error>> {
     let db = RulesDatabase::from_rules(vec![Rule::new(RuleSyntax::new(
