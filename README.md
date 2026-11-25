@@ -7,10 +7,6 @@ until you build confidnece on the tool. Redaction is hard.
 
 ## Safety contract
 
-The port will require verified upload before deletion, injective S3 object keys,
-and a change-nothing `--dry-run`. Secret values must never enter logs or state.
-The legacy reference does **not** satisfy all these guarantees; its CLI is disabled.
-
 Encoded-secret preflight conservatively blocks and retains files when decoded
 redaction is unavailable. A literal secret sharing a JSONL carrier with common
 escapes (such as `\\n` or `\\"`) can therefore retain the entire file rather than
@@ -19,8 +15,6 @@ in [issue #18](https://github.com/nigel-upstart/disk-archive/issues/18). Literal
 presence never exempts an encoded copy. NUL-bearing remainders stay one bounded
 carrier through EOF; UTF-16 expansion can exhaust its decoded-output budget near
 683 KiB, below the 1 MiB allocation ceiling. See [ADR 007](docs/adr/007-bounded-scanner.md).
-
-Never commit `.env`, runtime state, logs, archives, or actual session content.
 
 ## Configuration
 
@@ -32,11 +26,9 @@ settings will land with the config module; this is not a runnable setup guide.
 
 ## Development
 
-The [temporary plan](plan/PLAN.md) tracks sequencing; [GitHub issues](https://github.com/nigel-upstart/disk-archive/issues)
-are authoritative. Build tooling, verified kernels, usage, and migration guidance
-will land in subsequent PRs. Every PR must complete the review loop before merge.
+[GitHub issues](https://github.com/nigel-upstart/disk-archive/issues) are authoritative.
 
-For now, the stdlib-only synthetic redaction parity check is:
+The stdlib-only synthetic redaction parity check is:
 
 ```sh
 python3 legacy/python/tests/golden.py --check
