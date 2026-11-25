@@ -1,6 +1,6 @@
 # Dependency and toolchain policy
 
-**Owner:** Maintainers · **Status:** Active · **Last updated:** 2026-10-23
+**Owner:** Maintainers · **Status:** Active · **Last updated:** 2026-11-25
 **Links:** [crypto/native ADR](adr/006-crypto-provider.md), [scanner ADR](adr/005-scanner.md)
 
 Prefer registry dependencies with a committed lockfile. Git dependencies require a full immutable
@@ -14,12 +14,11 @@ not automatically trustworthy: review upstream changes and advisories before upg
 | Dependency | Upstream | Revision | Scope |
 | --- | --- | --- | --- |
 | AWS S3 transfer manager + synthetic mock | https://github.com/awslabs/aws-s3-transfer-manager-rs | `dc391970cd36e0d6d6ed044dcb3351b26131e9be` | Preview 0.3.1; Apache-2.0; manifest-only audited local patch |
-| Kingfisher scanner/core/rules | https://github.com/mongodb/kingfisher | `c0a65103432434b2e4f502d519ed25566faa282e` | `crates/scanner` integration under validation; scanner 2.0.0, core 1.0.4, rules 2.0.0; no validator features |
+| Kingfisher scanner/core/rules | https://github.com/mongodb/kingfisher | `98b67a0211b9818169cb0c3923619c00dd95c98b` | v2.20.0; scanner 4.1.0, core 2.1.0, rules 3.3.0; built-in detection only; #34 |
 
-The spike locks registry transitive packages, including published Vectorscan/sys 0.1.1. Kingfisher
-scanner/core use Apache-2.0; rules declare Apache-2.0 AND MIT. Audit the full graph and embedded
-catalog notices before production adoption. Changes to detection catalogs require planted/benign
-corpus comparison, not only compilation. The transfer manager revision above is admitted only with the exact root path patches and
+The scanner uses source-built Vectorscan/sys 0.1.4. The workspace and fuzz graphs select no
+Kingfisher scanner features and only `__scanner-internals` for rules. Catalog updates require
+planted and benign corpus comparison. The transfer manager revision above is admitted only with the exact root path patches and
 source-hash receipt in `vendor/transfer-manager/provenance.json`. Its original source, license and
 notice are retained; no Rust source is modified. The workspace manifest removes omitted auxiliary
 members and disables aws-config defaults while retaining HTTPS, Tokio and SSO. The resolved graph
@@ -41,35 +40,38 @@ is SHA-256 `3aec766384ece7e3e9ac462683a81a0c3803a1169900e071355d33c194d71fab`;
 are retained. Policy pins the receipt and exact path override; it rejects source, patch,
 receipt, extra-file and symlink changes. Upgrade tracking belongs to issue 5: check monthly
 for an upstream Smithy release supporting patched Hickory and remove this patch when available.
-Exact duplicate-API and foldhash-Zlib allowances in deny.toml expire 2026-11-21; these are
-not vulnerability waivers. The macOS-only core-foundation duplicate is required by Hickory's
+Exact duplicate-API and foldhash-Zlib allowances in deny.toml expire 2027-02-23.
+The macOS-only core-foundation duplicate is required by Hickory's
 system-configuration DNS integration versus rustls-native-certs' security-framework ABI.
 
 ## Reviewed scanner exceptions (issue #17)
 
-Owner: repository maintainer. All exceptions expire **2026-11-21**; the real
-supply-chain hook checks expiry, exact crate versions and attribution. PR #13
-reviews admission; #17 tracks upstream removal. Duplicate bans remain enabled:
-only incompatible, exact-version transitive APIs listed in deny.toml are skipped.
-The lockfile pins both versions; new versions are not implicitly approved.
-The merged SDK/scanner graph additionally needs exact `untrusted 0.7.1` alongside
-0.9.0: Kingfisher's AWS-LC parser and SDK rustls-webpki require incompatible APIs.
-This is an issue #17 duplicate allowance, not an advisory waiver.
+Owner is the repository maintainer. The supply-chain gate enforces the
+**2027-02-23** expiry, exact package entries and attribution. Issue #17 tracks
+removal. The Kingfisher upgrade drops the `term_size` and `unsafe-libyaml`
+maintenance exceptions, the `colored` license exception and the duplicate skips
+for packages absent from the upgraded graph. The duplicate policy keeps exact-version
+entries for the reviewed incompatible APIs. New pairs include `faster-hex`, `lock_api`,
+`parking_lot`, `parking_lot_core` and `redox_syscall`.
+The SDK and scanner still require `untrusted` 0.9.0 and 0.7.1, respectively.
+Both locks advance `rustix` to 1.1.6 and the workspace advances `url` to 2.5.9
+to address [RUSTSEC-2026-0486](https://rustsec.org/advisories/RUSTSEC-2026-0486)
+and [RUSTSEC-2026-0592](https://rustsec.org/advisories/RUSTSEC-2026-0592).
 
-Unmaintained anymap2 is reached through Liquid (validation templates are not
-executed); term_size through tokei (terminal rendering is not called);
-unsafe-libyaml through serde_yaml (only immutable embedded catalog YAML is parsed
-by builtin startup, never file/input YAML). These are maintenance exceptions,
-not vulnerability waivers. There is no safe semver update for these edges;
-replacing an upstream parser is a separate reviewed dependency change.
+Two maintenance advisories have exact-ID exceptions. Mandatory Liquid still pulls
+in unmaintained `anymap2` with scanner validator features disabled. `chrono` has
+no patched release and is present through `s3s` in the synthetic S3 mock dev
+graph. Retire the exceptions when the respective upstream dependencies migrate.
 
-License exceptions are exact-package scoped: CC0-1.0 for bip39/bitcoin_hashes/
-hex-conservative; permissive Zlib for foldhash/zlib-rs; permissive BSL-1.0 for
-xxhash-rust; MPL-2.0 for unmodified colored. Preserve MPL notices and supply that
-crate's source with binary distribution; file-level obligations do not relicense
-the application's MIT source. libfuzzer-sys 0.4.13 additionally uses permissive
-NCSA and belongs only to the isolated fuzz workspace. Preserve all upstream
-notices when distributing. No license category is globally disabled.
+The exact-package license entries cover CC0-1.0 for `bip39`, `bitcoin_hashes` and
+`hex-conservative`, Zlib for `foldhash` and `zlib-rs`, BSL-1.0 for `xxhash-rust`,
+and NCSA for the isolated `libfuzzer-sys` dev tool. `kingfisher-rules` 3.3.0
+declares Apache-2.0 AND MIT AND CC-BY-SA-4.0, with share-alike applying to the
+bundled wordfreq data, Copyright 2022 Robyn Speer. The application source is MIT.
+Release archives include the application license, Kingfisher license and notices,
+catalog attribution and the bundled data's separate license and attribution from
+the locked source. Preserve these files when redistributing the archive and apply
+CC-BY-SA-4.0 to adaptations of the bundled data.
 
 The isolated fuzz workspace has its own committed lockfile and cargo-deny gate.
 CI installs cargo-fuzz 0.13.2 and nightly-2026-10-20, distinct from the workspace

@@ -1101,7 +1101,7 @@ async fn native_catalog_real_http_s3_end_to_end() -> Result<(), Box<dyn std::err
                 .map_err(|_| Error::Blocked)
         })
         .await?;
-    assert_eq!(scanner.rule_count(), 488);
+    assert_eq!(scanner.rule_count(), 502);
     let scanner = Arc::new(scanner);
     Box::pin(native_encoding::blocked_carriers(
         scanner.clone(),

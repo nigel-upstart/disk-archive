@@ -1,12 +1,12 @@
 # 007 — Native Kingfisher detection with bounded streaming admission
 
 **Status:** Implementation under validation (not an issue #6 completion claim)
-**Owners:** Maintainers · **Last updated:** 2026-10-21
+**Owners:** Maintainers · **Last updated:** 2026-11-25
 
 ## Decision
 
-Use Kingfisher's git embedding crates at
-`c0a65103432434b2e4f502d519ed25566faa282e`, with default features disabled and
+Use Kingfisher v2.20.0's git embedding crates at
+`98b67a0211b9818169cb0c3923619c00dd95c98b`, with default features disabled and
 no credential validation features. The catalog stays in that dependency, not a
 copied rules directory. Native prerequisites follow [005](005-scanner.md) and
 [dependencies](../dependencies.md). No fallback detector or reduced catalog is
@@ -171,7 +171,7 @@ explicitly wiped before truncation. JSON/UTF16 character conversion uses zeroizi
 UTF8 scratch without temporary decoded Strings or serde allocations. Opaque
 library scratch/registers remain outside the allocator-wide erasure claim.
 
-The full 488-rule planted/benign test checks cloud, GitHub, GitLab, Slack, JWT,
+The full 502-rule planted/benign test checks cloud, GitHub, GitLab, Slack, JWT,
 private-key and database spans independently. Actual core integration additionally
 checks an env-assignment plant, removes every planted value and rescans clean.
 Curated prose, code, URLs, configuration, curl and Unicode have zero findings.
