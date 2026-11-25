@@ -160,6 +160,7 @@ pub struct Scanner {
     limits: Limits,
     guard: Option<SpanGuard>,
     labels: Vec<String>,
+    carrier_boundary_invariant: Vec<bool>,
 }
 
 impl Scanner {
@@ -212,6 +213,7 @@ impl Scanner {
             labels.push(label);
         }
         let mut unbounded = Vec::new();
+        let mut carrier_boundary_invariant = Vec::with_capacity(database.num_rules());
         for (index, regex) in database.anchored_regexes().iter().enumerate() {
             let hir = regex_syntax::ParserBuilder::new()
                 .unicode(false)
@@ -222,11 +224,14 @@ impl Scanner {
             if hir.properties().minimum_len().is_none_or(|size| size == 0) {
                 return Err(ScanError::UnsupportedRules);
             }
+            let line_restart_safe = database.confirmation_line_restart_safe(index);
+            carrier_boundary_invariant
+                .push(line_restart_safe && !encoding::can_assert_after_lf(&hir, false));
             if let Some(size) = database.confirmation_match_maximum_len(index) {
                 if size > limits.match_bytes {
                     return Err(ScanError::RuleTooLarge);
                 }
-            } else if !database.confirmation_line_restart_safe(index) {
+            } else if !line_restart_safe {
                 unbounded.push(regex.as_str().to_owned());
             }
         }
@@ -236,6 +241,7 @@ impl Scanner {
             limits,
             guard,
             labels,
+            carrier_boundary_invariant,
         })
     }
 
@@ -426,11 +432,63 @@ impl Scanner {
         &self,
         native: &mut BlockScanner<'_>,
         bytes: &[u8],
+        provenance: Option<&encoding::Provenance<'_>>,
     ) -> Result<bool, ScanError> {
         let selected = self.selected_rules(native, bytes)?;
         for (index, regex) in self.database.anchored_regexes().iter().enumerate() {
-            if selected.get(index).copied().ok_or(ScanError::Engine)? && regex.is_match(bytes) {
-                return Ok(true);
+            if !selected.get(index).copied().ok_or(ScanError::Engine)? {
+                continue;
+            }
+            let boundary_invariant = self
+                .carrier_boundary_invariant
+                .get(index)
+                .copied()
+                .ok_or(ScanError::Engine)?;
+            let provenance = provenance.filter(|_| boundary_invariant);
+            let mut originals = provenance.map(|origin| regex.captures_iter(origin.source));
+            for captures in regex.captures_iter(bytes) {
+                let rule = self.database.rules().get(index).ok_or(ScanError::Engine)?;
+                let secret = kingfisher_scanner::primitives::find_secret_capture_with_group(
+                    regex,
+                    &captures,
+                    rule.betterleaks_secret_group(),
+                );
+                let Some(origin) = provenance else {
+                    return Ok(true);
+                };
+                let Some(range) = origin.original(secret.range()) else {
+                    return Ok(true);
+                };
+                // Use actual nonoverlapping raw matches, not captures_at: an
+                // earlier raw alternative could otherwise suppress this span.
+                let mut original = None;
+                for captures in originals.as_mut().ok_or(ScanError::Engine)? {
+                    let full = captures.get(0).ok_or(ScanError::Engine)?;
+                    // Even a skipped match at a fabricated carrier boundary
+                    // can suppress different later matches in the raw stream.
+                    if full.start() == 0 || full.end() >= origin.source.len() {
+                        return Ok(true);
+                    }
+                    let raw = kingfisher_scanner::primitives::find_secret_capture_with_group(
+                        regex,
+                        &captures,
+                        rule.betterleaks_secret_group(),
+                    );
+                    if raw.end() >= range.end {
+                        original = Some(raw.range());
+                        break;
+                    }
+                }
+                let Some(raw) = original else {
+                    return Ok(true);
+                };
+                if raw != range {
+                    return Ok(true);
+                }
+                // The secret itself is unchanged and independently selected
+                // by an actual raw match with non-fabricated context. Context
+                // delimiters may transform; the raw secret must be identical
+                // at this exact source span. Normal redaction handles it.
             }
         }
         Ok(false)

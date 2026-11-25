@@ -6,8 +6,9 @@
 //! Upstream does not implement version/If-Match enforcement or `ListMultipartUploads`; recorded
 //! successful abort HTTP responses test cleanup, not real-S3 crash/lifecycle guarantees.
 
+use std::collections::BTreeSet;
 use std::sync::{
-    Arc,
+    Arc, Mutex,
     atomic::{AtomicU8, AtomicUsize, Ordering},
 };
 
@@ -53,6 +54,24 @@ struct Controls {
     aborted: AtomicUsize,
     parts: AtomicUsize,
     source_puts: AtomicUsize,
+    part_uploads: Mutex<BTreeSet<String>>,
+    aborted_uploads: Mutex<BTreeSet<String>>,
+}
+
+impl Controls {
+    fn observe_part(&self, upload_id: Option<&str>) {
+        self.parts.fetch_add(1, Ordering::AcqRel);
+        if let (Some(id), Ok(mut uploads)) = (upload_id, self.part_uploads.lock()) {
+            uploads.insert(id.to_owned());
+        }
+    }
+
+    fn observe_abort(&self, upload_id: Option<String>) {
+        self.aborted.fetch_add(1, Ordering::AcqRel);
+        if let (Some(id), Ok(mut uploads)) = (upload_id, self.aborted_uploads.lock()) {
+            uploads.insert(id);
+        }
+    }
 }
 
 /// Local upstream server plus a fault/observation proxy. All fixtures are synthetic.
@@ -115,6 +134,7 @@ impl MockS3 {
                         let control = control.clone();
                         async move {
                             let (head, create, abort, part) = classify(&request);
+                            let upload_id = upload_id(&request);
                             // G's source namespace is disjoint from all manifests. Count actual
                             // HTTP attempts, including failed requests and multipart parts.
                             if request.method() == hyper::Method::PUT
@@ -134,7 +154,7 @@ impl MockS3 {
                                 *request.uri_mut() = uri;
                             }
                             if part {
-                                control.parts.fetch_add(1, Ordering::AcqRel);
+                                control.observe_part(upload_id.as_deref());
                             }
                             let mut response = http.request(request).await?;
                             if response.status().is_success() {
@@ -142,7 +162,7 @@ impl MockS3 {
                                     control.created.fetch_add(1, Ordering::AcqRel);
                                 }
                                 if abort {
-                                    control.aborted.fetch_add(1, Ordering::AcqRel);
+                                    control.observe_abort(upload_id);
                                 }
                             }
                             if head && response.status().is_success() {
@@ -239,6 +259,26 @@ impl MockS3 {
         self.controls.parts.load(Ordering::Acquire)
     }
 
+    /// Check actual ID-correlated cleanup for uploads whose parts were observed.
+    /// A part request proves the client received and retained its create response.
+    /// Other server-side creates can lie in the documented response-loss window.
+    ///
+    /// # Errors
+    /// Poisoned observation locks fail rather than fabricate cleanup evidence.
+    pub fn all_part_uploads_aborted(&self) -> Result<bool, StoreError> {
+        let parts = self
+            .controls
+            .part_uploads
+            .lock()
+            .map_err(|_| StoreError::Worker)?;
+        let aborted = self
+            .controls
+            .aborted_uploads
+            .lock()
+            .map_err(|_| StoreError::Worker)?;
+        Ok(!parts.is_empty() && parts.is_subset(&aborted))
+    }
+
     /// Stop listeners and join fixture tasks. Does not touch any external runtime files.
     ///
     /// # Errors
@@ -252,6 +292,16 @@ impl MockS3 {
             .await
             .map_err(|_| StoreError::Worker)
     }
+}
+
+fn upload_id(request: &Request<Incoming>) -> Option<String> {
+    request
+        .uri()
+        .query()
+        .unwrap_or_default()
+        .split('&')
+        .find_map(|field| field.strip_prefix("uploadId="))
+        .map(str::to_owned)
 }
 
 fn classify(request: &Request<Incoming>) -> (bool, bool, bool, bool) {

@@ -10,7 +10,7 @@ use support::corpus;
 #[test]
 fn planted_and_benign_catalog() -> Result<(), Box<dyn std::error::Error>> {
     let scanner = Scanner::builtin(Limits::default())?;
-    assert_eq!(scanner.rule_count(), 488);
+    assert_eq!(scanner.rule_count(), 502);
     assert_eq!(scanner.input_buffer_bytes(), 1_114_115);
     let (input, manifest) = corpus();
     let mut detected = BTreeMap::<String, Vec<std::ops::Range<u64>>>::new();
@@ -36,7 +36,7 @@ fn planted_and_benign_catalog() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(summary.findings, 0, "unexpected benign finding count");
     }
     // Practical tool-result JSONL, including a near-1 MiB physical record. This
-    // exercises all 488 rules, not an easy-rule subset or a throughput claim.
+    // exercises the entire built-in catalog.
     for size in [100 * 1024, 1024 * 1024] {
         let prefix = b"{\"type\":\"tool_result\",\"content\":\"";
         let suffix = b"\"}\n";
@@ -56,6 +56,7 @@ fn planted_and_benign_catalog() -> Result<(), Box<dyn std::error::Error>> {
             Err(ScanError::UnsupportedEncoding)
         );
     }
+    literal_escape_redaction(&scanner)?;
     // Verification is a fresh in-process scan, never content-deduplicated away.
     assert!(scanner.scan(input.as_slice(), |_| Ok(()))?.findings >= manifest.len() as u64);
     let mut builder =
@@ -104,5 +105,67 @@ fn planted_and_benign_catalog() -> Result<(), Box<dyn std::error::Error>> {
         }
         Ok::<_, Box<dyn std::error::Error>>(())
     })?;
+    Ok(())
+}
+
+fn literal_escape_redaction(scanner: &Scanner) -> Result<(), Box<dyn std::error::Error>> {
+    // Entirely invented credentials. Raw and output values are never formatted.
+    let secret = format!(
+        "ghp_{}",
+        "aB3dE5gH7jK9mN2pQ4sT6vW8yZ1cF0iL"
+            .repeat(2)
+            .chars()
+            .take(36)
+            .collect::<String>()
+    );
+    for secret in [
+        secret.as_str(),
+        "https://fixture_user:fixture_password@example.invalid/path",
+    ] {
+        let input = format!(r#"{{"text":"before\n {secret} after\\nend"}}"#);
+        let mut builder = PlanBuilder::new(RedactionLimits::default())
+            .map_err(|_| "literal redaction configuration")?;
+        let summary = scanner.scan(input.as_bytes(), |finding| {
+            builder
+                .push(&FindingRaw {
+                    label: finding.redaction_label(),
+                    raw: finding.raw(),
+                })
+                .map_err(|_| ScanError::Consumer)
+        })?;
+        assert!(summary.findings > 0);
+        let plan = builder.finish([]).map_err(|_| "literal redaction plan")?;
+        let mut output = Zeroizing::new(Vec::new());
+        assert!(
+            plan.redact(input.as_bytes(), &mut *output)
+                .map_err(|_| "literal redaction failed")?
+                .replacements
+                > 0
+        );
+        assert!(
+            !output
+                .windows(secret.len())
+                .any(|window| window == secret.as_bytes())
+        );
+        // Generic URI syntax can also recognize a redaction marker as a
+        // password. Mirror the archiver's existing verified whole-line fallback.
+        let mut drops = Vec::new();
+        scanner.scan(output.as_slice(), |finding| {
+            drops.push(finding.line());
+            Ok(())
+        })?;
+        if !drops.is_empty() {
+            let fallback = PlanBuilder::new(RedactionLimits::default())
+                .map_err(|_| "fallback configuration")?
+                .finish(drops)
+                .map_err(|_| "fallback plan")?;
+            let mut clean = Zeroizing::new(Vec::new());
+            fallback
+                .redact(output.as_slice(), &mut *clean)
+                .map_err(|_| "fallback redaction")?;
+            output = clean;
+        }
+        assert_eq!(scanner.scan(output.as_slice(), |_| Ok(()))?.findings, 0);
+    }
     Ok(())
 }

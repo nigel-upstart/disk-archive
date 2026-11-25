@@ -1101,7 +1101,7 @@ async fn native_catalog_real_http_s3_end_to_end() -> Result<(), Box<dyn std::err
                 .map_err(|_| Error::Blocked)
         })
         .await?;
-    assert_eq!(scanner.rule_count(), 488);
+    assert_eq!(scanner.rule_count(), 502);
     let scanner = Arc::new(scanner);
     Box::pin(native_encoding::blocked_carriers(
         scanner.clone(),
@@ -1163,6 +1163,7 @@ async fn native_catalog_real_http_s3_end_to_end() -> Result<(), Box<dyn std::err
         let source_hash: [u8; 32] = Sha256::digest(&decoded).into();
         assert_eq!(source_hash, expected.source.sha256);
         assert!(!std::str::from_utf8(&decoded)?.contains("ghp_"));
+        assert!(!std::str::from_utf8(&decoded)?.contains("fixture_password"));
     }
     drop(store);
     mock.shutdown().await?;
@@ -1207,13 +1208,27 @@ fn plant_native(fixture: &Fixture) -> Result<(), std::io::Error> {
         "ghp_{}",
         mixed.repeat(2).chars().take(36).collect::<String>()
     );
-    let path = fixture.root.join("0.jsonl");
-    std::fs::write(&path, format!("synthetic fixture\n{synthetic}\n"))?;
-    File::open(path)?.set_times(
-        FileTimes::new()
-            .set_accessed(UNIX_EPOCH + Duration::from_secs(1))
-            .set_modified(UNIX_EPOCH + Duration::from_secs(2)),
-    )
+    for (ordinal, input) in [
+        (
+            0,
+            format!(r#"{{"text":"before\n {synthetic} after\\nend"}}"#),
+        ),
+        (
+            1,
+            String::from(
+                r#"{"text":"before\n https://fixture_user:fixture_password@example.invalid/path\nend"}"#,
+            ),
+        ),
+    ] {
+        let path = fixture.root.join(format!("{ordinal}.jsonl"));
+        std::fs::write(&path, format!("synthetic fixture.\n{input}\n"))?;
+        File::open(path)?.set_times(
+            FileTimes::new()
+                .set_accessed(UNIX_EPOCH + Duration::from_secs(1))
+                .set_modified(UNIX_EPOCH + Duration::from_secs(2)),
+        )?;
+    }
+    Ok(())
 }
 
 fn read_rows(path: PathBuf) -> Result<Vec<Row>, Error> {
