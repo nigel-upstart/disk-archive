@@ -1,0 +1,120 @@
+version = 1
+# Provisional until ten unchanged-main hosted runs calibrate noise. No baseline
+# exists before publication and CI must never create/raise one automatically.
+noise_study_complete = false
+bootstrap_rounds = 4000
+minimum_samples = 10
+
+[metrics."redaction.Ir"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."redaction.I1mr"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."redaction.D1mr"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."redaction.D1mw"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."redaction.ILmr"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."redaction.DLmr"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."redaction.DLmw"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."scanner.Ir"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."scanner.I1mr"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."scanner.D1mr"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."scanner.D1mw"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."scanner.ILmr"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."scanner.DLmr"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."scanner.DLmw"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."gzip_sha256.Ir"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."gzip_sha256.I1mr"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."gzip_sha256.D1mr"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."gzip_sha256.D1mw"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."gzip_sha256.ILmr"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."gzip_sha256.DLmr"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics."gzip_sha256.DLmw"]
+kind = "deterministic"
+tolerance = 0.02
+
+[metrics.wall]
+kind = "statistical"
+tolerance = 0.10
+
+# Issue #7: CPU time is gated as user + system. The components are reported
+# but never gated, so user/kernel redistribution is not a false regression.
+[metrics.cpu_total]
+kind = "statistical"
+tolerance = 0.10
+
+[metrics.cpu_user]
+kind = "advisory"
+tolerance = 0.10
+
+[metrics.cpu_system]
+kind = "advisory"
+tolerance = 0.10
+
+[metrics.peak_rss_bytes]
+kind = "statistical"
+tolerance = 0.10
+
+[metrics.voluntary_context_switches]
+kind = "statistical"
+tolerance = 0.10
+
+[metrics.involuntary_context_switches]
+kind = "statistical"
+tolerance = 0.10
