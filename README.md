@@ -1,24 +1,18 @@
 # disk-archive
 
-Owner: disk-archive maintainers · Status: implementation in progress · Updated: 2026-11-25
+An agent session-log archiver: discover old files, scan and redact secrets,
+verify redaction, compress and upload to S3, verify the object, then delete locally.
 
-The Rust application is under development to replace the Python session-log
-archiver. It discovers old files, scans and redacts secrets, verifies redaction,
-compresses and uploads to S3, verifies the object, then deletes the local file.
-Continue developing and testing Rust until it has working parity with the Python
-archiver, including the deliberate safety improvements below. Python is a fallback
-while Rust reaches that point, not the target for new archiver development.
+The Rust application is under development to replace the Python archiver. Continue
+developing and testing Rust until it has working parity with Python, including the
+deliberate safety improvements. Python is a fallback during that transition, not
+the target for new archiver development. The sanitized Python copy in this
+repository is a test reference, not a runnable fallback: its CLI is disabled.
 
-The Rust CLI can be built and tested on synthetic inputs, but is not ready to run
-on real session roots. The sanitized Python copy in this repository is a test
-reference, not a runnable fallback: its CLI is disabled. Do not operate on a
-running Python archiver or its files while developing the Rust app.
+Use the tool at your own risk. It is under active development, so keep backups
+and be cautious until you have confidence in it. Redaction is hard.
 
 ## Safety contract
-
-The Rust app requires verified upload before deletion, injective S3 object keys,
-and a change-nothing `--dry-run`. Secret values must never enter logs or state.
-The legacy reference does **not** satisfy all these guarantees; its CLI is disabled.
 
 Encoded-secret preflight conservatively blocks and retains files when decoded
 redaction is unavailable. A literal secret sharing a JSONL carrier with common
@@ -28,8 +22,6 @@ in [issue #18](https://github.com/nigel-upstart/disk-archive/issues/18). Literal
 presence never exempts an encoded copy. NUL-bearing remainders stay one bounded
 carrier through EOF; UTF-16 expansion can exhaust its decoded-output budget near
 683 KiB, below the 1 MiB allocation ceiling. See [ADR 007](docs/adr/007-bounded-scanner.md).
-
-Never commit `.env`, runtime state, logs, archives, or actual session content.
 
 ## Configuration
 
@@ -42,12 +34,11 @@ not a production setup or migration guide.
 
 ## Development
 
-The [temporary plan](plan/PLAN.md) tracks sequencing; [GitHub issues](https://github.com/nigel-upstart/disk-archive/issues)
-are authoritative. Parity is broader than matching redactor output: it also
-requires confidence in discovery, scanning, verification, upload, recovery, and
-deletion behavior, with the safety changes above. Real-S3 acceptance and migration
-guidance remain work to complete before use on real session roots. Every PR must
-complete the review loop before merge.
+[GitHub issues](https://github.com/nigel-upstart/disk-archive/issues) are authoritative.
+Parity is broader than matching redactor output: it also requires confidence in
+discovery, scanning, verification, upload, recovery, and deletion behavior, with
+the intended safety improvements. Real-S3 acceptance and migration guidance remain
+work to complete.
 
 For a local CLI smoke test, first install the pinned development tools and native
 prerequisites described by `task doctor`, then run:
