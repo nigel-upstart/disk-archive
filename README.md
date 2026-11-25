@@ -1,10 +1,9 @@
 # disk-archive
 
-Owner: disk-archive maintainers · Status: implementation in progress · Updated: 2026-10-21
-
-A Rust port of a session-log archiver: discover old files, scan and redact secrets,
+An agent session-log archiver: discover old files, scan and redact secrets,
 verify redaction, compress and upload to S3, verify the object, then delete locally.
-The Rust application is not ready for use. Do not run it on real session roots yet.
+Use at your own risk, under active development so backup and be cautious when using 
+until you build confidnece on the tool. Redaction is hard.
 
 ## Safety contract
 
