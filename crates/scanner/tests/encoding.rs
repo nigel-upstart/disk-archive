@@ -341,7 +341,7 @@ fn depth_and_carrier_budgets_fail_closed_with_static_errors()
 -> Result<(), Box<dyn std::error::Error>> {
     let scanner = scanner(31)?;
     let mut carrier = b"ordinary public documentation".to_vec();
-    for _ in 0..6 {
+    for _ in 0..10 {
         carrier = STANDARD.encode(&carrier).into_bytes();
     }
     assert_eq!(
@@ -369,20 +369,33 @@ fn depth_and_carrier_budgets_fail_closed_with_static_errors()
     Ok(())
 }
 
+fn nested_escapes(
+    text: &str,
+    json: bool,
+    levels: usize,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut carrier = String::from_utf8(escaped(text, json)?)?;
+    for _ in 1..levels {
+        carrier = if json {
+            carrier.replace('\\', r"\u005c")
+        } else {
+            carrier.replace('%', "%25")
+        };
+    }
+    Ok(carrier.into_bytes())
+}
+
 #[test]
 fn inert_escape_markers_at_depth_limit_do_not_block() -> Result<(), Box<dyn std::error::Error>> {
     for json in [true, false] {
-        let mut carrier = br"\q%".to_vec();
-        for _ in 0..4 {
-            carrier = escaped(std::str::from_utf8(&carrier)?, json)?;
-        }
+        let carrier = nested_escapes(r"\q%", json, 8)?;
         for chunk in [1, 31, 64 * 1024] {
             let summary = scanner(chunk)?.scan(carrier.as_slice(), |_| Ok(()))?;
             assert_eq!(summary.bytes, carrier.len() as u64);
             assert_eq!(summary.findings, 0);
         }
-        // Another actual transformation still exceeds the unchanged depth cap.
-        carrier = escaped(std::str::from_utf8(&carrier)?, json)?;
+        // A ninth actual transformation still exceeds the bounded depth cap.
+        let carrier = nested_escapes(r"\q%", json, 9)?;
         assert_eq!(
             scanner(31)?.scan(carrier.as_slice(), |_| Ok(())),
             Err(ScanError::Budget)
@@ -394,10 +407,7 @@ fn inert_escape_markers_at_depth_limit_do_not_block() -> Result<(), Box<dyn std:
 #[test]
 fn encoded_secrets_at_depth_limit_still_block() -> Result<(), Box<dyn std::error::Error>> {
     for json in [true, false] {
-        let mut carrier = b"demo_abcd1234efgh5678".to_vec();
-        for _ in 0..4 {
-            carrier = escaped(std::str::from_utf8(&carrier)?, json)?;
-        }
+        let carrier = nested_escapes("demo_abcd1234efgh5678", json, 8)?;
         assert_eq!(
             scanner(31)?.scan(carrier.as_slice(), |_| Ok(())),
             Err(ScanError::UnsupportedEncoding)
@@ -429,14 +439,210 @@ fn raw_literal_presence_does_not_excuse_a_hidden_encoded_copy()
                 .map(|byte| char::from(*byte))
                 .collect::<String>()
         ),
-        // The minimum-safe preflight can conservatively retain even this case.
-        // Literal equality alone cannot prove whether a transformed copy is safe.
-        format!("{secret} unrelated%20escape"),
+        format!(r#"{{"literal":"{secret}","hidden":"%64emo_abcd1234efgh5678"}}"#),
     ] {
         assert_eq!(
             scanner.scan(carrier.as_bytes(), |_| Ok(())),
             Err(ScanError::UnsupportedEncoding)
         );
+    }
+    Ok(())
+}
+
+#[test]
+fn unchanged_literal_matches_are_delivered_for_normal_redaction()
+-> Result<(), Box<dyn std::error::Error>> {
+    let secret = "demo_abcd1234efgh5678";
+    for chunk in [1, 7, 31, 64 * 1024] {
+        let scanner = scanner(chunk)?;
+        for carrier in [
+            format!(r#"{{"text":"line\n{secret}\nend"}}"#),
+            format!(r#"{{"text":"line\\n{secret}\\nend"}}"#),
+            format!(r#"{{"text":"line%20{secret}%20end"}}"#),
+            format!(r#"{{"text":"λ\n{secret}%20end"}}"#),
+        ] {
+            let mut findings = 0;
+            let summary = scanner.scan(carrier.as_bytes(), |finding| {
+                assert!(finding.raw().eq(secret));
+                let range = finding.byte_range();
+                assert!(
+                    carrier
+                        .as_bytes()
+                        .get(
+                            usize::try_from(range.start).map_err(|_| ScanError::Budget)?
+                                ..usize::try_from(range.end).map_err(|_| ScanError::Budget)?,
+                        )
+                        .is_some_and(|bytes| bytes.eq(secret.as_bytes()))
+                );
+                findings += 1;
+                Ok(())
+            })?;
+            assert_eq!(summary.findings, 1);
+            assert_eq!(findings, 1);
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn source_presence_does_not_excuse_changed_context_or_opaque_carriers()
+-> Result<(), Box<dyn std::error::Error>> {
+    let secret = "demo_abcd1234efgh5678";
+    let db = RulesDatabase::from_rules(vec![Rule::new(RuleSyntax::new(
+        "fixture.context",
+        "Synthetic context only",
+        r"key=(demo_[a-z0-9]{16})",
+    ))])?;
+    let scanner = Scanner::new(db, Limits::default())?;
+    for carrier in [
+        format!(r#"{{"text":"key\u003d{secret}"}}"#),
+        format!(r#"{{"text":"key%3d{secret}"}}"#),
+        STANDARD.encode(format!(r#"{{"text":"key={secret}\n"}}"#)),
+    ] {
+        assert_eq!(
+            scanner.scan(carrier.as_bytes(), |_| Ok(())),
+            Err(ScanError::UnsupportedEncoding)
+        );
+    }
+    // Even a direct match at an artificial carrier edge is not proof of raw
+    // streaming behavior. Keep that ambiguous case blocked.
+    assert_eq!(
+        scanner.scan(format!(r"key={secret}\n").as_bytes(), |_| Ok(())),
+        Err(ScanError::UnsupportedEncoding)
+    );
+    Ok(())
+}
+
+#[test]
+fn five_real_decode_stages_accept_benign_utf16_but_block_encoded_secrets()
+-> Result<(), Box<dyn std::error::Error>> {
+    for chunk in [1, 7, 64 * 1024] {
+        let scanner = scanner(chunk)?;
+        for (text, secret) in [("hi there.", false), ("demo_abcd1234efgh5678", true)] {
+            let base64 = STANDARD.encode(utf16(text, true));
+            let percent = escaped(&base64, false)?;
+            let carrier = nested_escapes(std::str::from_utf8(&percent)?, true, 2)?;
+            let result = scanner.scan(carrier.as_slice(), |_| Ok(()));
+            if secret {
+                assert_eq!(result, Err(ScanError::UnsupportedEncoding));
+            } else {
+                assert_eq!(result?.findings, 0);
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn provenance_does_not_invent_boundaries_or_exempt_multiline_rules()
+-> Result<(), Box<dyn std::error::Error>> {
+    for (pattern, input) in [
+        (
+            r"\Aprefix (demo_[a-z0-9]{16})",
+            r"prefix demo_abcd1234efgh5678\n!",
+        ),
+        (
+            r"(?s)(demo_[a-z0-9]{16}).*\z",
+            r"! demo_abcd1234efgh5678\n!",
+        ),
+        (
+            r"(?s)BEGIN.*?(demo_[a-z0-9]{16}).*?END",
+            r"! BEGIN demo_abcd1234efgh5678 END\n!",
+        ),
+        (r"\bdemo_[a-z0-9]{16}", r"! x\u0020demo_abcd1234efgh5678 !"),
+    ] {
+        let db = RulesDatabase::from_rules(vec![Rule::new(RuleSyntax::new(
+            "fixture.boundary",
+            "Synthetic boundary only",
+            pattern,
+        ))])?;
+        let scanner = Scanner::new(db, Limits::default())?;
+        assert_eq!(
+            scanner.scan(input.as_bytes(), |_| Ok(())),
+            Err(ScanError::UnsupportedEncoding)
+        );
+    }
+    let scanner = scanner(7)?;
+    let seeded = b"heading token \t\n{\"text\":\" demo_abcd1234efgh5678 \\n\"}";
+    assert_eq!(
+        scanner.scan(seeded.as_slice(), |_| Ok(())),
+        Err(ScanError::UnsupportedEncoding)
+    );
+    let excessive = "x%20".repeat(4097);
+    assert_eq!(scanner.scan(excessive.as_bytes(), |_| Ok(()))?.findings, 0);
+    // Optional metadata exhaustion must not certify an unprovenanced secret.
+    let hidden = format!("{excessive} demo_abcd1234efgh5678 !");
+    assert_eq!(
+        scanner.scan(hidden.as_bytes(), |_| Ok(())),
+        Err(ScanError::UnsupportedEncoding)
+    );
+    for json in [true, false] {
+        let carrier = nested_escapes("! \\q%\n!", json, 8)?;
+        assert_eq!(scanner.scan(carrier.as_slice(), |_| Ok(()))?.findings, 0);
+    }
+    Ok(())
+}
+
+#[test]
+fn skipped_boundary_match_cannot_certify_later_nonoverlapping_secret()
+-> Result<(), Box<dyn std::error::Error>> {
+    // The carrier-local anchored alternative consumes only the escape, whereas
+    // whole-input matching consumes its following `abc` too, suppressing `bcd`.
+    for chunk in [1, 2, 7, 64 * 1024] {
+        let db = RulesDatabase::from_rules(vec![Rule::new(RuleSyntax::new(
+            "fixture.skipped-boundary",
+            "Synthetic suppressed raw match",
+            r"\A\\n|(?P<PREFIX>\\n)abc|(?P<TOKEN>bcd)",
+        ))])?;
+        let scanner = Scanner::new(
+            db,
+            Limits {
+                chunk_bytes: chunk,
+                ..Limits::default()
+            },
+        )?;
+        let input = b"!\n\\nabcd !\n";
+        assert_eq!(
+            scanner.scan(input.as_slice(), |_| Ok(())),
+            Err(ScanError::UnsupportedEncoding)
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn terminal_lf_assertion_cannot_certify_a_suppressed_raw_secret()
+-> Result<(), Box<dyn std::error::Error>> {
+    // The next record makes the word boundary after LF succeed in the raw
+    // stream. That earlier alternative consumes the later token's span.
+    let input = b"!\\n bcd !\nword\n";
+    for chunk in [1, 2, 7, 64 * 1024] {
+        for (pattern, expected) in [
+            (
+                r"(?P<PREFIX>!\\n)[^\n]{0,32}\n\b|(?P<TOKEN>bcd)",
+                Err(ScanError::UnsupportedEncoding),
+            ),
+            (r"(?P<PREFIX>!\\n)[^\n]{0,32}\b\n|(?P<TOKEN>bcd)", Ok(1)),
+        ] {
+            let db = RulesDatabase::from_rules(vec![Rule::new(RuleSyntax::new(
+                "fixture.lf-assertion",
+                "Synthetic record boundary",
+                pattern,
+            ))])?;
+            let scanner = Scanner::new(
+                db,
+                Limits {
+                    chunk_bytes: chunk,
+                    ..Limits::default()
+                },
+            )?;
+            assert_eq!(
+                scanner
+                    .scan(input.as_slice(), |_| Ok(()))
+                    .map(|report| report.findings),
+                expected
+            );
+        }
     }
     Ok(())
 }

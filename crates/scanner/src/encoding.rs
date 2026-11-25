@@ -5,6 +5,7 @@ use base64::{
     engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig},
 };
 use kingfisher_vectorscan::BlockScanner;
+use regex_syntax::hir::{Class, Hir, HirKind};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{ScanError, Scanner};
@@ -12,7 +13,133 @@ use crate::{ScanError, Scanner};
 const CARRIER_BYTES: usize = 1024 * 1024;
 const DECODE_BYTES: usize = 64 * 1024 * 1024;
 const CANDIDATES: usize = 1_048_576;
-const DEPTH: usize = 4;
+const DEPTH: usize = 8;
+const PROVENANCE_RUNS: usize = 4096;
+
+// The native restart certificate rules out consuming bytes after LF. An
+// assertion after LF can still see the next record and change which earlier
+// alternative wins. Follow possible suffixes to exclude that case as well.
+pub(super) fn can_assert_after_lf(hir: &Hir, assertion_follows: bool) -> bool {
+    if !assertion_follows && hir.properties().look_set().is_empty() {
+        return false;
+    }
+    match hir.kind() {
+        HirKind::Empty | HirKind::Look(_) => false,
+        HirKind::Literal(literal) => assertion_follows && literal.0.contains(&b'\n'),
+        HirKind::Class(class) => {
+            assertion_follows
+                && match class {
+                    Class::Bytes(class) => class
+                        .iter()
+                        .any(|range| range.start() <= b'\n' && b'\n' <= range.end()),
+                    Class::Unicode(class) => class
+                        .iter()
+                        .any(|range| range.start() <= '\n' && '\n' <= range.end()),
+                }
+        }
+        HirKind::Capture(capture) => can_assert_after_lf(&capture.sub, assertion_follows),
+        HirKind::Alternation(parts) => parts
+            .iter()
+            .any(|part| can_assert_after_lf(part, assertion_follows)),
+        HirKind::Concat(parts) => {
+            let mut assertion_follows = assertion_follows;
+            for part in parts.iter().rev() {
+                if can_assert_after_lf(part, assertion_follows) {
+                    return true;
+                }
+                assertion_follows |= !part.properties().look_set().is_empty();
+            }
+            false
+        }
+        HirKind::Repetition(repetition) => {
+            let repeats = repetition.max.is_none_or(|maximum| maximum > 1);
+            let repeated_assertion = repeats && !repetition.sub.properties().look_set().is_empty();
+            can_assert_after_lf(&repetition.sub, assertion_follows || repeated_assertion)
+        }
+    }
+}
+
+struct Run {
+    decoded: std::ops::Range<usize>,
+    source: usize,
+}
+
+/// Only unchanged, contiguous bytes retain original source offsets.
+/// Opaque decoding never inherits these spans. Metadata contains no values.
+pub(super) struct Provenance<'a> {
+    pub(super) source: &'a [u8],
+    runs: Vec<Run>,
+}
+
+impl<'a> Provenance<'a> {
+    fn identity(source: &'a [u8]) -> Self {
+        Self {
+            source,
+            runs: vec![Run {
+                decoded: 0..source.len(),
+                source: 0,
+            }],
+        }
+    }
+
+    pub(super) fn original(&self, range: std::ops::Range<usize>) -> Option<std::ops::Range<usize>> {
+        let at = self
+            .runs
+            .partition_point(|run| run.decoded.end <= range.start);
+        let run = self
+            .runs
+            .get(at)
+            .filter(|run| run.decoded.start <= range.start && range.end <= run.decoded.end)?;
+        let start = run.source + range.start - run.decoded.start;
+        let end = start + range.len();
+        // Never use a fabricated carrier boundary to justify a raw finding.
+        (start > 0 && end < self.source.len()).then_some(start..end)
+    }
+
+    fn project(&self, local: &[Run]) -> Self {
+        let mut runs = Vec::new();
+        let mut at = 0;
+        for run in local {
+            let end = run.source + run.decoded.len();
+            while self
+                .runs
+                .get(at)
+                .is_some_and(|parent| parent.decoded.end <= run.source)
+            {
+                at += 1;
+            }
+            for parent in self
+                .runs
+                .iter()
+                .skip(at)
+                .take_while(|parent| parent.decoded.start < end)
+            {
+                let start = run.source.max(parent.decoded.start);
+                let end = end.min(parent.decoded.end);
+                push_run(
+                    &mut runs,
+                    Run {
+                        decoded: (run.decoded.start + start - run.source)
+                            ..(run.decoded.start + end - run.source),
+                        source: parent.source + start - parent.decoded.start,
+                    },
+                );
+            }
+        }
+        Self {
+            source: self.source,
+            runs,
+        }
+    }
+}
+
+fn push_run(runs: &mut Vec<Run>, run: Run) {
+    // Provenance is optional evidence, not a decoding budget. Discard excess
+    // runs: a decoded match requiring one then blocks instead of being excused.
+    if !run.decoded.is_empty() && runs.len() < PROVENANCE_RUNS {
+        runs.push(run);
+    }
+}
 
 pub(crate) struct Preflight<'a> {
     scanner: &'a Scanner,
@@ -21,6 +148,7 @@ pub(crate) struct Preflight<'a> {
     used: usize,
     line_start: usize,
     utf16_carrier: bool,
+    synthetic_seed: bool,
     budget: Budget,
 }
 
@@ -34,6 +162,7 @@ impl<'a> Preflight<'a> {
             used: 0,
             line_start: 0,
             utf16_carrier: false,
+            synthetic_seed: false,
             budget: Budget::default(),
         })
     }
@@ -58,7 +187,14 @@ impl<'a> Preflight<'a> {
                     // Check each physical line AND the bounded joined run.
                     // Independent unpadded carriers must not shift one another;
                     // tiny wraps must not split a recoverable secret away.
-                    inspect(self.scanner, &mut self.native, line, 0, &mut self.budget)?;
+                    inspect(
+                        self.scanner,
+                        &mut self.native,
+                        line,
+                        0,
+                        &mut self.budget,
+                        None,
+                    )?;
                     let padded_end = trimmed.last() == Some(&b'=');
                     self.line_start = self.used;
                     if padded_end {
@@ -86,6 +222,7 @@ impl<'a> Preflight<'a> {
                         .copy_from_slice(&seed);
                     self.used = seed.len();
                     self.line_start = self.used;
+                    self.synthetic_seed = !seed.is_empty();
                 }
             }
         }
@@ -99,12 +236,15 @@ impl<'a> Preflight<'a> {
     fn inspect_record(&mut self) -> Result<(), ScanError> {
         // Line and joined-run checks share one budget for this bounded carrier,
         // not a lifetime file counter. Ambiguous overlong base64 runs block.
+        let bytes = self.record.get(..self.used).ok_or(ScanError::Budget)?;
+        let provenance = (!self.synthetic_seed).then(|| Provenance::identity(bytes));
         inspect(
             self.scanner,
             &mut self.native,
             self.record.get(..self.used).ok_or(ScanError::Budget)?,
             0,
             &mut self.budget,
+            provenance.as_ref(),
         )?;
         self.record
             .get_mut(..self.used)
@@ -112,6 +252,7 @@ impl<'a> Preflight<'a> {
             .zeroize();
         self.used = 0;
         self.line_start = 0;
+        self.synthetic_seed = false;
         self.budget = Budget::default();
         Ok(())
     }
@@ -148,6 +289,7 @@ fn inspect(
     bytes: &[u8],
     depth: usize,
     budget: &mut Budget,
+    provenance: Option<&Provenance<'_>>,
 ) -> Result<(), ScanError> {
     if bytes.contains(&b'\\') || bytes.contains(&b'%') {
         for json in [true, false] {
@@ -156,11 +298,13 @@ fn inspect(
                 // level. Enforce depth only when a real transformation exists.
                 budget.charge_work(bytes.len())?;
                 let mut decoded = output(bytes.len());
-                if unescape(bytes, json, &mut decoded)? {
+                let mut local = Vec::new();
+                if unescape(bytes, json, &mut decoded, &mut local)? {
                     if depth >= DEPTH {
                         return Err(ScanError::Budget);
                     }
-                    check(scanner, native, &decoded, depth, budget)?;
+                    let mapped = provenance.map(|parent| parent.project(&local));
+                    check(scanner, native, &decoded, depth, budget, mapped.as_ref())?;
                 }
             }
         }
@@ -198,7 +342,7 @@ fn inspect(
                     let mut utf8 = Zeroizing::new([0; 4]);
                     append(&mut decoded, ch.encode_utf8(&mut *utf8).as_bytes())?;
                 }
-                check(scanner, native, &decoded, depth, budget)?;
+                check(scanner, native, &decoded, depth, budget, None)?;
             }
         }
     }
@@ -216,7 +360,9 @@ fn inspect_base64(
         // Also inspect independent lines: joining unpadded unrelated carriers
         // can shift their alignment. Apply identical joining at every decoded
         // level, including JSON-unescaped LF followed by indentation.
-        budget.charge(bytes.len(), depth)?;
+        // Layout normalization is work, not another decoding level. Actual
+        // Base64 candidates below still consume depth before being decoded.
+        budget.charge_work(bytes.len())?;
         let mut joined = output(bytes.len());
         for line in bytes.split_inclusive(|byte| *byte == b'\n') {
             inspect_base64_tokens(scanner, native, line, depth, budget)?;
@@ -289,7 +435,7 @@ fn inspect_base64_tokens(
             if let Ok(used) = engine.decode_slice(candidate, &mut decoded) {
                 decoded.get_mut(used..).ok_or(ScanError::Budget)?.zeroize();
                 decoded.truncate(used);
-                check(scanner, native, &decoded, depth, budget)?;
+                check(scanner, native, &decoded, depth, budget, None)?;
             }
         }
     }
@@ -302,16 +448,23 @@ fn check(
     decoded: &[u8],
     depth: usize,
     budget: &mut Budget,
+    provenance: Option<&Provenance<'_>>,
 ) -> Result<(), ScanError> {
-    if scanner.confirm_decoded(native, decoded)? {
+    if let Some(origin) = provenance {
+        // Raw-match evidence also examines bytes: don't hide that repeated work
+        // behind tiny decoded candidates or exempt it from the carrier budget.
+        budget.charge_work(origin.source.len())?;
+    }
+    if scanner.confirm_decoded(native, decoded, provenance)? {
         return Err(ScanError::UnsupportedEncoding);
     }
-    inspect(scanner, native, decoded, depth + 1, budget)
+    inspect(scanner, native, decoded, depth + 1, budget, provenance)
 }
 
 fn output(capacity: usize) -> Zeroizing<Vec<u8>> {
     // Final capacity before any sensitive bytes are written. Each live decoded
-    // level is <=1 MiB and nesting <=4; aggregate work has a separate 64 MiB cap.
+    // level is <=1 MiB and nesting <=8; aggregate work has a separate 64 MiB cap.
+    // Provenance is at most 4096 value-free runs per level (two bounded lists).
     Zeroizing::new(Vec::with_capacity(capacity.min(CARRIER_BYTES)))
 }
 
@@ -335,17 +488,33 @@ fn hex(byte: u8) -> Option<u32> {
     char::from(byte).to_digit(16)
 }
 
-fn unescape(input: &[u8], json: bool, output: &mut Vec<u8>) -> Result<bool, ScanError> {
+fn unescape(
+    input: &[u8],
+    json: bool,
+    output: &mut Vec<u8>,
+    runs: &mut Vec<Run>,
+) -> Result<bool, ScanError> {
     let mut at = 0;
     let mut changed = false;
+    let mut literal_input = 0;
+    let mut literal_output = output.len();
     while let Some(&byte) = input.get(at) {
         if !json && byte == b'%' {
             if let Some(value) = input.get(at + 1..at + 3).and_then(|digits| {
                 u8::try_from(hex(*digits.first()?)? * 16 + hex(*digits.get(1)?)?).ok()
             }) {
+                push_run(
+                    runs,
+                    Run {
+                        decoded: literal_output..output.len(),
+                        source: literal_input,
+                    },
+                );
                 append(output, &[value])?;
                 changed = true;
                 at += 3;
+                literal_input = at;
+                literal_output = output.len();
                 continue;
             }
         } else if json && byte == b'\\' {
@@ -363,9 +532,18 @@ fn unescape(input: &[u8], json: bool, output: &mut Vec<u8>) -> Result<bool, Scan
                     };
                     let ch = char::from_u32(scalar).ok_or(ScanError::UnsupportedEncoding)?;
                     let mut utf8 = Zeroizing::new([0; 4]);
+                    push_run(
+                        runs,
+                        Run {
+                            decoded: literal_output..output.len(),
+                            source: literal_input,
+                        },
+                    );
                     append(output, ch.encode_utf8(&mut *utf8).as_bytes())?;
                     changed = true;
                     at += used;
+                    literal_input = at;
+                    literal_output = output.len();
                     continue;
                 }
             } else if let Some(escaped) = input.get(at + 1).and_then(|byte| match byte {
@@ -377,15 +555,31 @@ fn unescape(input: &[u8], json: bool, output: &mut Vec<u8>) -> Result<bool, Scan
                 b'f' => Some(12),
                 _ => None,
             }) {
+                push_run(
+                    runs,
+                    Run {
+                        decoded: literal_output..output.len(),
+                        source: literal_input,
+                    },
+                );
                 append(output, &[escaped])?;
                 changed = true;
                 at += 2;
+                literal_input = at;
+                literal_output = output.len();
                 continue;
             }
         }
         append(output, &[byte])?;
         at += 1;
     }
+    push_run(
+        runs,
+        Run {
+            decoded: literal_output..output.len(),
+            source: literal_input,
+        },
+    );
     Ok(changed)
 }
 
@@ -419,6 +613,45 @@ mod tests {
     }
 
     #[test]
+    fn provenance_excludes_transformed_bytes_edges_and_excess_runs() -> Result<(), ScanError> {
+        let source = br"x%20middle\u0020end!";
+        let origin = Provenance::identity(source);
+        assert!(origin.original(0..1).is_none());
+        assert!(origin.original(source.len() - 1..source.len()).is_none());
+        let mut decoded = output(source.len());
+        let mut runs = Vec::new();
+        assert!(unescape(source, false, &mut decoded, &mut runs)?);
+        let mapped = origin.project(&runs);
+        assert_eq!(mapped.original(2..8), Some(4..10));
+        assert!(mapped.original(1..2).is_none());
+        assert!(mapped.original(0..3).is_none());
+        decoded.zeroize();
+        decoded.clear();
+        runs.clear();
+        assert!(unescape(source, true, &mut decoded, &mut runs)?);
+        assert!(!origin.project(&runs).runs.is_empty());
+        let mut runs = Vec::new();
+        for _ in 0..PROVENANCE_RUNS {
+            push_run(
+                &mut runs,
+                Run {
+                    decoded: 1..2,
+                    source: 1,
+                },
+            );
+        }
+        push_run(
+            &mut runs,
+            Run {
+                decoded: 2..3,
+                source: 2,
+            },
+        );
+        assert_eq!(runs.len(), PROVENANCE_RUNS);
+        Ok(())
+    }
+
+    #[test]
     fn initialized_partial_decode_and_tail_are_wipeable_on_error() -> Result<(), ScanError> {
         let engine = GeneralPurpose::new(&alphabet::STANDARD, GeneralPurposeConfig::new());
         let mut decoded = Zeroizing::new(vec![0; 64]);
@@ -433,7 +666,12 @@ mod tests {
         assert!(decoded.iter().all(|byte| *byte == 0));
         let mut output = output(64);
         let original = output.capacity();
-        assert!(unescape(br"%70%75%62%6c%69%63", false, &mut output)?);
+        assert!(unescape(
+            br"%70%75%62%6c%69%63",
+            false,
+            &mut output,
+            &mut Vec::new()
+        )?);
         assert_eq!(output.capacity(), original);
         output.as_mut_slice().zeroize();
         assert!(output.iter().all(|byte| *byte == 0));

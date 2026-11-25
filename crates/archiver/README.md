@@ -41,10 +41,13 @@ fallback 1).
 The CLI limits each original/rewrite to 64 MiB. Core and scanner line/finding/work limits also
 apply; a partial scan/output never authorizes upload. The native scanner's `UnsupportedEncoding`
 also maps to persisted `Blocked`: supported recoverable encoded carriers never reach archive
-PUTs unchanged. This conservative privacy floor also blocks a literal secret when the same
-carrier contains a JSON escape. Session-log JSONL commonly includes escaped newlines or quotes,
-so affected files remain local instead of being redacted/uploaded; retained files can accumulate
-until the encoded-offset follow-up in [issue 18](https://github.com/nigel-upstart/disk-archive/issues/18).
+PUTs unchanged. Bounded JSON/percent provenance can admit a literal secret beside unrelated
+escapes only when the unchanged sensitive bytes map to the same actual raw native secret
+capture, under a newline-restart-safe rule with non-artificial match boundaries. Normal
+redaction and whole-output verification still apply, including the whole-line fallback if a
+redaction marker itself matches URI syntax. Encoded copies, changed sensitive bytes, opaque
+decoding and ambiguous source proofs still block; general encoded-offset redaction remains
+[issue 18](https://github.com/nigel-upstart/disk-archive/issues/18).
 The real 488-rule/HTTP test covers JSON Unicode, percent, base64, UTF-16LE/BE,
 base64-of-UTF16, and literal-plus-encoded mixtures, preserving every original byte. Anonymous snapshot/output files consume
 at most two file-size budgets per executing scan worker. Storage separately bounds gzip spool
