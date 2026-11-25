@@ -3,7 +3,8 @@ set -euo pipefail
 
 binary=${1:?release binary required}
 archive=${2:?output archive required}
-rules_manifest=$(cargo metadata --locked --offline --format-version 1 --filter-platform x86_64-unknown-linux-gnu |
+host=$(rustc --print host-tuple)
+rules_manifest=$(cargo metadata --locked --offline --format-version 1 --filter-platform "$host" |
 	python3 -c '
 import json
 import sys

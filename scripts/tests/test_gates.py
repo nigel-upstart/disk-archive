@@ -100,8 +100,12 @@ class PolicyTests(unittest.TestCase):
             subprocess.run(["python3", str(ROOT / "scripts/policy.py"), "staged"], cwd=root, check=True, env=git_env)
 
     def test_dependency_exceptions_expire_and_require_attribution(self):
-        text = ('[advisories]\nignore=[{id="RUSTSEC-0000-0000",'
-                'reason="Owner: maintainer; #17; expires 2026-11-21; synthetic fixture"}]')
+        text = """
+[advisories]
+ignore = [
+  { id = "RUSTSEC-0000-0000", reason = "Owner: maintainer; #17; expires 2026-11-21; synthetic fixture" },
+]
+"""
         policy.check_exceptions(text, datetime.date(2026, 10, 21))
         with self.assertRaisesRegex(ValueError, "expired"):
             policy.check_exceptions(text, datetime.date(2026, 11, 21))

@@ -38,7 +38,7 @@ jobs:
         run: bash scripts/release-bundle.sh target/release/disk-archive target/release/disk-archive-linux-x86_64.tar.gz
       - uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
-          subject-path: target/release/disk-archive-linux-x86_64.tar.gz
+          subject-path: target/release/disk-archive
           sbom-path: target/sbom/disk-archive.cdx.json
       - name: Attach release bundle and all member SBOMs
         env:

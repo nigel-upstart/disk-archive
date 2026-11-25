@@ -70,8 +70,9 @@ declares Apache-2.0 AND MIT AND CC-BY-SA-4.0, with share-alike applying to the
 bundled wordfreq data, Copyright 2022 Robyn Speer. The application source is MIT.
 Release archives include the application license, Kingfisher license and notices,
 catalog attribution and the bundled data's separate license and attribution from
-the locked source. Preserve these files when redistributing the archive and apply
-CC-BY-SA-4.0 to adaptations of the bundled data.
+the locked source. Extract `disk-archive` from the release archive to verify its
+SBOM attestation. Preserve the notices when redistributing the archive and follow
+the CC-BY-SA-4.0 share-alike terms when redistributing adaptations of the data.
 
 The isolated fuzz workspace has its own committed lockfile and cargo-deny gate.
 CI installs cargo-fuzz 0.13.2 and nightly-2026-10-20, distinct from the workspace
