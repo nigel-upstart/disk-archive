@@ -44,8 +44,8 @@ In the legacy run the scan, redact and verify queues stayed saturated while the 
 
 ## Implementation checkpoint (PR #13)
 
-Native Kingfisher is pinned to c0a65103432434b2e4f502d519ed25566faa282e;
-all 488 rules compile, with bounded lazy-DFA admission and callback confirmation.
+Native Kingfisher v2.20.0 is pinned to 98b67a0211b9818169cb0c3923619c00dd95c98b.
+All 502 rules compile, with bounded lazy-DFA admission and callback confirmation.
 The Send+Sync catalog is shared across workers; per-call scratch/cache stays local.
 Defaults align with core's 1 MiB physical record, with explicit fail-closed caps.
 Independent direct plants plus core env rules, benign fixtures, practical JSONL

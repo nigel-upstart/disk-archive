@@ -1,4 +1,4 @@
-//! Archive-path regressions using the real merged 488-rule scanner and localhost SDK transport.
+//! Archive-path regressions using the full built-in catalog and localhost SDK transport.
 
 use super::*;
 use base64::{

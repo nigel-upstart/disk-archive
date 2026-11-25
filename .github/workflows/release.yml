@@ -34,17 +34,19 @@ jobs:
         run: bash scripts/verus-install.sh
       - run: task check
       - run: cargo build --release --locked --package disk-archive
+      - name: Bundle the binary with license and attribution files
+        run: bash scripts/release-bundle.sh target/release/disk-archive target/release/disk-archive-linux-x86_64.tar.gz
       - uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-path: target/release/disk-archive
           sbom-path: target/sbom/disk-archive.cdx.json
-      - name: Attach binary and all member SBOMs
+      - name: Attach release bundle and all member SBOMs
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" target/sbom/*.cdx.json target/release/disk-archive
+            gh release upload "$RELEASE_TAG" target/sbom/*.cdx.json target/release/disk-archive-linux-x86_64.tar.gz
           else
-            gh release create "$RELEASE_TAG" target/sbom/*.cdx.json target/release/disk-archive --verify-tag --generate-notes
+            gh release create "$RELEASE_TAG" target/sbom/*.cdx.json target/release/disk-archive-linux-x86_64.tar.gz --verify-tag --generate-notes
           fi

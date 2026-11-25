@@ -48,7 +48,7 @@ redaction and whole-output verification still apply, including the whole-line fa
 redaction marker itself matches URI syntax. Encoded copies, changed sensitive bytes, opaque
 decoding and ambiguous source proofs still block; general encoded-offset redaction remains
 [issue 18](https://github.com/nigel-upstart/disk-archive/issues/18).
-The real 488-rule/HTTP test covers JSON Unicode, percent, base64, UTF-16LE/BE,
+The full-catalog HTTP test covers JSON Unicode, percent, base64, UTF-16LE/BE,
 base64-of-UTF16, and literal-plus-encoded mixtures, preserving every original byte. Anonymous snapshot/output files consume
 at most two file-size budgets per executing scan worker. Storage separately bounds gzip spool
 reservations and transport buffers. These are logical quotas, not a total RSS guarantee.

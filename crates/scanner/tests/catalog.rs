@@ -10,7 +10,7 @@ use support::corpus;
 #[test]
 fn planted_and_benign_catalog() -> Result<(), Box<dyn std::error::Error>> {
     let scanner = Scanner::builtin(Limits::default())?;
-    assert_eq!(scanner.rule_count(), 488);
+    assert_eq!(scanner.rule_count(), 502);
     assert_eq!(scanner.input_buffer_bytes(), 1_114_115);
     let (input, manifest) = corpus();
     let mut detected = BTreeMap::<String, Vec<std::ops::Range<u64>>>::new();
@@ -36,7 +36,7 @@ fn planted_and_benign_catalog() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(summary.findings, 0, "unexpected benign finding count");
     }
     // Practical tool-result JSONL, including a near-1 MiB physical record. This
-    // exercises all 488 rules, not an easy-rule subset or a throughput claim.
+    // exercises the entire built-in catalog.
     for size in [100 * 1024, 1024 * 1024] {
         let prefix = b"{\"type\":\"tool_result\",\"content\":\"";
         let suffix = b"\"}\n";

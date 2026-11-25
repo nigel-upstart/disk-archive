@@ -57,4 +57,4 @@ if result.returncode:
     sys.exit("scanner/core fuzz failed; output suppressed to protect generated input")
 if not re.search(rb"Done 1000 runs in [0-9]+ second", result.stderr):
     sys.exit("scanner/core fuzz did not complete requested runs")
-print("Full 488-rule scanner/core arbitrary-byte fuzz: 1000 seeded runs completed; no panic.")
+print("Full-catalog scanner/core arbitrary-byte fuzz: 1000 seeded runs completed; no panic.")
