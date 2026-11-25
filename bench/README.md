@@ -25,7 +25,7 @@ must be safely removed or blocked/retained, never relabeled as throughput succes
 
 Criterion 0.8.2 and Gungraun 0.20.0 are exact development pins; plotting/Rayon defaults
 are disabled. The core kernel calls real PlanBuilder/redaction and asserts actual replacements.
-The new `components` feature registers the full 488-rule scanner over a fixed buffer
+The new `components` feature registers the full 502-rule scanner over a fixed buffer
 and a gzip/SHA256 primitive composition with the production library/settings. That
 composition excludes storage admission, file I/O, CRC64 and SDK work; it is not full
 UploadPreparer or E2E throughput. Native catalog setup/teardown is outside the scanner
@@ -68,7 +68,7 @@ UploadPreparer counters. Earlier manually linked development receipts are histor
 not final evidence. The bounded E2E corpus produces single uploads; the separate
 multipart functional control is not multipart E2E throughput evidence.
 
-`collectors/pipeline.rs` now executes all 488 native rules, actual G bounded pipeline,
+`collectors/pipeline.rs` now executes all 502 native rules, actual G bounded pipeline,
 SQLite, source rewrite/delete, H preparation/SDK and the measuring proxy. It copies
 only the bounded generated corpus into a new owned temporary directory. An explicit
 encoded-secret fixture must remain byte-identical/Blocked with no upload intent.

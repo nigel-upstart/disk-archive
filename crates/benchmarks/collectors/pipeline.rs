@@ -8,7 +8,10 @@ use disk_archive::{
     pipeline::{self, Options, Services},
     state::{Row, Status},
 };
-use disk_archive_benchmarks::transport::{Bindings, MeasuringProxy, SizeClass, TransportStats};
+use disk_archive_benchmarks::{
+    components::full_catalog,
+    transport::{Bindings, MeasuringProxy, SizeClass, TransportStats},
+};
 use disk_archive_core::config::{Config, Environment};
 use disk_archive_metrics::Counters;
 use disk_archive_scanner::Scanner;
@@ -531,14 +534,12 @@ async fn collect(corpus: &Path, binary_sha256: String) -> Result<Receipt> {
     let start = Instant::now();
     let scanner = Arc::new(
         pool.run(&CancellationToken::new(), || {
-            Scanner::builtin(disk_archive_scanner::Limits::default())
-                .map_err(|_| disk_archive::Error::Blocked)
+            full_catalog().map_err(|_| disk_archive::Error::Blocked)
         })
         .await
         .map_err(|_| ())?,
     );
     let catalog_init_seconds = start.elapsed().as_secs_f64();
-    check(scanner.rule_count() == 488)?;
     let mock = MockS3::start().await.map_err(|_| ())?;
     let proxy = MeasuringProxy::around_mock(&mock).await.map_err(|_| ())?;
     let store_options = StoreOptions {

@@ -14,7 +14,7 @@ production source, external-worktree path dependency or development-rlib receipt
 is treated as final validation. J owns app/profiling changes; I edits none of
 archiver/storage/metrics/vendor or G's CI/cache capacity/audit implementation.
 
-Registered consumers: real core redaction; full 488-rule scanner; explicitly
+Registered consumers: real core redaction; full 502-rule scanner; explicitly
 labeled gzip/SHA256 primitive microbenchmarks; actual G/SQLite/preparation/SDK/mock
 collector and independent HTTP observer. The seeded corpus is 89 files/7,029,003
 bytes under 8 MiB, plus one deliberately encoded blocked source. E2E uploads are

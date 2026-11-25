@@ -28,6 +28,18 @@ pub fn buffer() -> Zeroizing<Vec<u8>> {
     bytes
 }
 
+/// Compile all 502 rules in the pinned production catalog.
+///
+/// # Errors
+/// Propagates scanner initialization failures and rejects a mismatched catalog.
+pub fn full_catalog() -> Result<Scanner, ScanError> {
+    let scanner = Scanner::builtin(Limits::default())?;
+    if scanner.rule_count() != 502 {
+        return Err(ScanError::UnsupportedRules);
+    }
+    Ok(scanner)
+}
+
 /// Reusable full-catalog fixture. Creation is not scanner throughput.
 pub struct ScannerFixture {
     scanner: Scanner,
@@ -35,17 +47,13 @@ pub struct ScannerFixture {
 }
 
 impl ScannerFixture {
-    /// Compile and check all 488 native rules; never substitute a toy rule.
+    /// Compile and check the full native catalog.
     ///
     /// # Errors
     /// Propagates catalog/resource failures without a faster partial result.
     pub fn new() -> Result<Self, ScanError> {
-        let scanner = Scanner::builtin(Limits::default())?;
-        if scanner.rule_count() != 488 {
-            return Err(ScanError::UnsupportedRules);
-        }
         Ok(Self {
-            scanner,
+            scanner: full_catalog()?,
             input: buffer(),
         })
     }

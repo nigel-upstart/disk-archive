@@ -27,7 +27,7 @@ fn kernels(criterion: &mut Criterion) {
 
 fn components(criterion: &mut Criterion) {
     let scanner = ScannerFixture::new();
-    assert!(scanner.is_ok(), "all 488 native rules must compile");
+    assert!(scanner.is_ok(), "the full native catalog must compile");
     if let Ok(scanner) = scanner {
         let mut group = criterion.benchmark_group("full_catalog_scanner");
         group.throughput(Throughput::Bytes(BUFFER_BYTES as u64));
