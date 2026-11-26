@@ -14,6 +14,7 @@ from audit import binary_digest
 import build
 import check
 import kernels
+import preflight
 import run
 from test_assemble import inputs
 
@@ -217,6 +218,45 @@ class KernelTests(unittest.TestCase):
             receipt.write_text(json.dumps(data))
             with self.assertRaises(ValueError):
                 kernels.load(receipt, environment)
+
+
+class WorkflowPreflightTests(unittest.TestCase):
+    def test_missing_public_baseline_fails_without_tools_or_fake_measurements(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            event, summary = root / "event.json", root / "summary.md"
+            event.write_text(json.dumps(dict(repository=dict(private=False))))
+            env = dict(GITHUB_ACTIONS="true", GITHUB_EVENT_NAME="push", GITHUB_EVENT_PATH=str(event))
+            with patch.dict(os.environ, env), patch("run.subprocess.check_output", side_effect=["a" * 40, ""]) as git:
+                self.assertEqual(preflight.preflight(root, first_public_bootstrap=False, summary_path=summary), 1)
+                self.assertEqual([call.args[0][1] for call in git.call_args_list], ["rev-parse", "ls-tree"])
+            self.assertIn("blocked-missing-baseline (no measurements run)", summary.read_text())
+            self.assertIn("first_public_bootstrap=true", summary.read_text())
+
+    def test_reviewed_baseline_or_private_run_can_measure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            summary = root / "summary.md"
+            for public, baseline in [(False, None), (True, root / "reviewed.json")]:
+                with patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}), patch.object(preflight, "effective_public", return_value=public), patch.object(preflight, "reviewed_baseline", return_value=(None, baseline)):
+                    self.assertEqual(preflight.preflight(root, first_public_bootstrap=False, summary_path=summary), 0)
+            self.assertFalse(summary.exists())
+
+    def test_only_eligible_manual_bootstrap_can_collect_on_public_main_without_baseline(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            event, summary = root / "event.json", root / "summary.md"
+            event.write_text(json.dumps(dict(repository=dict(private=False), inputs=dict(first_public_bootstrap="true"))))
+            env = dict(GITHUB_ACTIONS="true", GITHUB_EVENT_NAME="workflow_dispatch", GITHUB_EVENT_PATH=str(event),
+                       GITHUB_REF="refs/heads/main", RUNNER_ENVIRONMENT="github-hosted", RUNNER_OS="Linux")
+            commit = "a" * 40
+            responses = [commit, "", "false", commit, commit, "", ""]
+            with patch.dict(os.environ, env), patch("run.subprocess.check_output", side_effect=responses):
+                self.assertEqual(preflight.preflight(root, first_public_bootstrap=True, summary_path=summary), 0)
+            for overrides, git_responses in [({"GITHUB_EVENT_NAME": "push"}, responses[:2]), ({"GITHUB_REF": "refs/heads/topic"}, responses[:2]), ({}, responses[:-1] + [commit])]:
+                with patch.dict(os.environ, {**env, **overrides}), patch("run.subprocess.check_output", side_effect=git_responses), self.assertRaises(ValueError):
+                    preflight.preflight(root, first_public_bootstrap=True, summary_path=summary)
+            self.assertFalse(summary.exists())
 
 
 class CollectionTests(unittest.TestCase):

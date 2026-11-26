@@ -25,8 +25,8 @@ def effective_public(explicit: bool) -> bool:
     return not private
 
 
-def authorize_first_public_bootstrap(current: dict, *, public: bool, baseline: Path | None) -> None:
-    """Only an explicit hosted public-main manual dispatch with NO baseline history."""
+def first_public_bootstrap_commit(root: Path, *, public: bool, baseline: Path | None) -> str:
+    """Return the clean reviewed main commit for an explicit first-public dispatch."""
     required = {"GITHUB_ACTIONS": "true", "GITHUB_EVENT_NAME": "workflow_dispatch", "GITHUB_REF": "refs/heads/main", "RUNNER_ENVIRONMENT": "github-hosted", "RUNNER_OS": "Linux"}
     if not public or baseline is not None or any(os.environ.get(key) != value for key, value in required.items()):
         raise ValueError("bootstrap requires an explicit first public-main manual dispatch")
@@ -34,18 +34,25 @@ def authorize_first_public_bootstrap(current: dict, *, public: bool, baseline: P
     manual = event.get("inputs", {}).get("first_public_bootstrap")
     if event["repository"].get("private") is not False or (manual != "true" and manual is not True):
         raise ValueError("bootstrap requires explicit public-repository dispatch input")
-    root = Path(__file__).resolve().parents[1]
     if subprocess.check_output(["git", "rev-parse", "--is-shallow-repository"], cwd=root, text=True).strip() != "false":
         raise ValueError("complete baseline history is required for bootstrap")
     main = subprocess.check_output(["git", "rev-parse", "origin/main"], cwd=root, text=True).strip()
     head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
     dirty = subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=normal"], cwd=root, text=True)
-    fingerprint = current["fingerprint"]
-    if head != main or dirty.strip() or fingerprint.get("source_commit") != main or fingerprint.get("source_dirty") is not False:
-        raise ValueError("bootstrap measurements must come from clean reviewed main")
-    history = subprocess.check_output(["git", "log", "origin/main", "--format=%H", "--", ":(glob)bench/baseline/**/*.json"], cwd=root, text=True)
+    if head != main or dirty.strip():
+        raise ValueError("bootstrap requires clean reviewed main")
+    history = subprocess.check_output(["git", "log", main, "--format=%H", "--", ":(glob)bench/baseline/**/*.json"], cwd=root, text=True)
     if history.strip():
         raise ValueError("baseline history exists; deletion cannot reenable bootstrap")
+    return main
+
+
+def authorize_first_public_bootstrap(current: dict, *, public: bool, baseline: Path | None) -> None:
+    """Recheck eligibility after collection and bind the observation to reviewed main."""
+    main = first_public_bootstrap_commit(Path(__file__).resolve().parents[1], public=public, baseline=baseline)
+    fingerprint = current["fingerprint"]
+    if fingerprint.get("source_commit") != main or fingerprint.get("source_dirty") is not False:
+        raise ValueError("bootstrap measurements must come from clean reviewed main")
 
 
 def evaluate(current: Path, policy: Path, *, baseline: Path | None = None,

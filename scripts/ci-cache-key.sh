@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 # Hash only public compiler/native inputs; never dump environment or credentials.
 set -euo pipefail
-# The first uncached Linux check exhausted disk during the second (coverage)
-# native build. The combined archive/SDK closure also exhausted that headroom.
-# Reclaim only these fixed unused SDK roots from actions/runner-images' Ubuntu
-# provisioning scripts; never repository artifacts, Rust/native tools or self-hosts.
-# Pinned CycloneDX release binaries are self-contained, needing no .NET install.
-# Kept outside the key inputs: reclaiming unrelated disk changes no build flags.
+mode=${1:?workspace, fuzz or perf required}
+# The full CI check needs room for two native builds (debug and coverage).
+# Perf only builds one release target tree. Avoid the slow SDK cleanup there
+# when at least 16 GiB are free; a failed disk probe still reclaims space.
+# Only these fixed SDKs on hosted Linux may be reclaimed, not repo artifacts.
 if [[ ${GITHUB_ACTIONS-} == true && ${RUNNER_ENVIRONMENT-} == github-hosted && ${RUNNER_OS-} == Linux ]]; then
-	sudo -n rm -rf -- /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup
+	if [[ $mode != perf ]] || ! df -Pk . | awk 'NR == 2 && $4 >= 16 * 1024 * 1024 {ok = 1} END {exit !ok}'; then
+		sudo -n rm -rf -- /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup
+	fi
 fi
-case ${1:?workspace or fuzz required} in
-workspace)
+case $mode in
+workspace | perf)
 	compiler=(rustc)
 	lock=Cargo.lock
 	;;

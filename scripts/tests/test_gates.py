@@ -181,7 +181,7 @@ class CacheKeyTests(unittest.TestCase):
 
     def test_sdk_reclamation_is_hosted_linux_only_and_has_fixed_roots(self):
         script = (ROOT / "scripts/ci-cache-key.sh").read_text()
-        reclaim, separator, _ = script.partition("case ${1:?workspace or fuzz required} in")
+        reclaim, separator, _ = script.partition("case $mode in")
         self.assertTrue(separator)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -191,6 +191,9 @@ class CacheKeyTests(unittest.TestCase):
             sudo = binary / "sudo"
             sudo.write_text("#!/bin/sh\nprintf '%s\\n' CALL \"$@\" >> \"$MOCK_SUDO_ARGS\"\n")
             sudo.chmod(0o700)
+            df = binary / "df"
+            df.write_text("#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\nsynthetic 0 0 %s 0%% /\\n' \"$MOCK_FREE_KIB\"\nexit \"$MOCK_DF_STATUS\"\n")
+            df.chmod(0o700)
             names = ("GITHUB_ACTIONS", "RUNNER_ENVIRONMENT", "RUNNER_OS")
             environment = {key: value for key, value in os.environ.items() if key not in names}
             environment.update(PATH=str(binary) + os.pathsep + os.environ["PATH"],
@@ -210,16 +213,25 @@ class CacheKeyTests(unittest.TestCase):
             for case in invalid:
                 with self.subTest(environment=case):
                     calls.unlink(missing_ok=True)
-                    subprocess.run(["bash", "-c", reclaim], env={**environment, **case},
-                                   cwd=root, check=True)
+                    subprocess.run(["bash", "-c", reclaim, "reclaim", "workspace"],
+                                   env={**environment, **case}, cwd=root, check=True)
                     self.assertFalse(calls.exists())
-            subprocess.run(["bash", "-c", reclaim], env={**environment, **hosted},
-                           cwd=root, check=True)
-            self.assertTrue(calls.exists())
-            self.assertEqual(calls.read_text().splitlines(), [
-                "CALL", "-n", "rm", "-rf", "--", "/usr/local/lib/android",
-                "/usr/share/dotnet", "/usr/local/.ghcup",
-            ])
+            threshold = 16 * 1024 * 1024
+            for mode, free, status, deletes in [("workspace", threshold, 0, True),
+                                                   ("fuzz", threshold, 0, True),
+                                                   ("perf", threshold, 0, False),
+                                                   ("perf", threshold - 1, 0, True),
+                                                   ("perf", threshold, 1, True)]:
+                with self.subTest(mode=mode, free=free, status=status):
+                    calls.unlink(missing_ok=True)
+                    subprocess.run(["bash", "-c", reclaim, "reclaim", mode], cwd=root, check=True,
+                                   env={**environment, **hosted, "MOCK_FREE_KIB": str(free), "MOCK_DF_STATUS": str(status)})
+                    self.assertEqual(calls.exists(), deletes)
+                    if deletes:
+                        self.assertEqual(calls.read_text().splitlines(), [
+                            "CALL", "-n", "rm", "-rf", "--", "/usr/local/lib/android",
+                            "/usr/share/dotnet", "/usr/local/.ghcup",
+                        ])
 
     def test_dynamic_cpu_fields_do_not_break_safe_cache_reuse(self):
         with tempfile.TemporaryDirectory() as temporary:
