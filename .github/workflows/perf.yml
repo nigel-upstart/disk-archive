@@ -26,29 +26,37 @@ jobs:
     env:
       CARGO_BUILD_JOBS: '4'
       VECTORSCAN_OFFLINE: '1'
+      FIRST_PUBLIC_BOOTSTRAP: ${{ inputs.first_public_bootstrap || false }}
+      GUNGRAUN_RUNNER_VERSION: '0.20.0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Check reviewed baseline or explicit bootstrap eligibility
+        run: |
+          args=()
+          if [[ "$FIRST_PUBLIC_BOOTSTRAP" == true ]]; then args+=(--first-public-bootstrap); fi
+          python3 -B bench/preflight.py "${args[@]}"
       - name: Native build and measurement prerequisites (hosted runner only)
         run: sudo apt-get update && sudo apt-get install -y build-essential cmake libboost-dev ragel pkg-config strace valgrind
-      - name: Install pinned workspace Rust and matching benchmark runner
+      - name: Install pinned workspace Rust
         run: |
           pin=$(python3 -c 'import tomllib; print(tomllib.load(open("rust-toolchain.toml", "rb"))["toolchain"]["channel"])')
           rustup toolchain install "$pin" --profile minimal
-          cargo install gungraun-runner --version 0.20.0 --locked
       - name: Fingerprint compiler and native inputs
         id: perf-native
-        run: bash scripts/ci-cache-key.sh workspace
+        run: bash scripts/ci-cache-key.sh perf
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: release-cache
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         with:
-          key: perf-v1-${{ runner.os }}-${{ runner.arch }}-release-${{ github.ref }}-${{ steps.perf-native.outputs.digest }}-${{ steps.perf-native.outputs.native }}-${{ hashFiles('Cargo.toml', 'rust-toolchain.toml', '**/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', '.github/workflows/perf.yml') }}-${{ hashFiles('Cargo.lock') }}
+          # Workflow-only edits must not evict build artifacts. Hash the actual build
+          # command, workspace manifests, Cargo config and native build inputs instead.
+          key: perf-v2-${{ runner.os }}-${{ runner.arch }}-release-${{ github.ref }}-${{ steps.perf-native.outputs.digest }}-${{ steps.perf-native.outputs.native }}-${{ hashFiles('**/Cargo.toml', '.cargo/config*', 'rust-toolchain.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', 'bench/build.py') }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            perf-v1-${{ runner.os }}-${{ runner.arch }}-release-${{ github.ref }}-${{ steps.perf-native.outputs.digest }}-${{ steps.perf-native.outputs.native }}-${{ hashFiles('Cargo.toml', 'rust-toolchain.toml', '**/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', '.github/workflows/perf.yml') }}-
-            perf-v1-${{ runner.os }}-${{ runner.arch }}-release-refs/heads/main-${{ steps.perf-native.outputs.digest }}-${{ steps.perf-native.outputs.native }}-${{ hashFiles('Cargo.toml', 'rust-toolchain.toml', '**/Cargo.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', '.github/workflows/perf.yml') }}-
+            perf-v2-${{ runner.os }}-${{ runner.arch }}-release-${{ github.ref }}-${{ steps.perf-native.outputs.digest }}-${{ steps.perf-native.outputs.native }}-${{ hashFiles('**/Cargo.toml', '.cargo/config*', 'rust-toolchain.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', 'bench/build.py') }}-
+            perf-v2-${{ runner.os }}-${{ runner.arch }}-release-refs/heads/main-${{ steps.perf-native.outputs.digest }}-${{ steps.perf-native.outputs.native }}-${{ hashFiles('**/Cargo.toml', '.cargo/config*', 'rust-toolchain.toml', '**/build.rs', '**/CMakeLists.txt', 'scripts/ci-cache-native.py', 'scripts/ci-cache-key.sh', 'bench/build.py') }}-
           path: |
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
@@ -59,6 +67,28 @@ jobs:
             !**/*.log
             !**/build/**/output
             !**/build/**/stderr
+      # Publish the pinned runner only on main. Fork PRs do not restore it.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: gungraun-cache
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          key: perf-gungraun-v1-${{ runner.os }}-${{ runner.arch }}-main-${{ env.GUNGRAUN_RUNNER_VERSION }}-${{ steps.perf-native.outputs.digest }}
+          path: ${{ runner.temp }}/perf-tools/bin/gungraun-runner
+      - name: Install or verify pinned Gungraun runner
+        run: |
+          tool_root="$RUNNER_TEMP/perf-tools"
+          runner="$tool_root/bin/gungraun-runner"
+          expected="gungraun-runner $GUNGRAUN_RUNNER_VERSION"
+          if [[ ! -x "$runner" ]] || [[ $("$runner" --version) != "$expected" ]]; then
+            cargo install gungraun-runner --version "=$GUNGRAUN_RUNNER_VERSION" --locked --root "$tool_root" --force
+          fi
+          test "$("$runner" --version)" = "$expected"
+          printf '%s\n' "$tool_root/bin" >> "$GITHUB_PATH"
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: github.ref == 'refs/heads/main' && steps.gungraun-cache.outputs.cache-hit != 'true'
+        with:
+          key: ${{ steps.gungraun-cache.outputs.cache-primary-key }}
+          path: ${{ runner.temp }}/perf-tools/bin/gungraun-runner
       - name: Compile actual collector and registered component benchmarks
         id: release-build
         run: python3 -B bench/build.py --receipt target/perf-build.json
@@ -67,8 +97,6 @@ jobs:
       - name: Actual Callgrind instruction and cache events
         run: python3 -B bench/kernels.py --build target/perf-build.json --output target/perf-kernels.json
       - name: Native pipeline, independent verification, OS audit and resource populations
-        env:
-          FIRST_PUBLIC_BOOTSTRAP: ${{ inputs.first_public_bootstrap || false }}
         run: |
           args=()
           if [[ "$FIRST_PUBLIC_BOOTSTRAP" == true ]]; then args+=(--first-public-bootstrap); fi
@@ -93,8 +121,7 @@ jobs:
       - name: Explain failed-closed collection
         if: failure()
         run: echo 'Performance validation failed. Missing observations or baselines are not a passing gate; no baseline was created or raised.' >> "$GITHUB_STEP_SUMMARY"
-      # Regressions and missing baselines exit nonzero AFTER writing reports;
-      # keep their samples/fingerprints even when the gate fails.
+      # Keep fresh samples/fingerprints when collection ran but the gate failed.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:

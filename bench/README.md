@@ -124,8 +124,22 @@ with explicit `first_public_bootstrap` input, clean measured HEAD equal to revie
 `origin/main`, full Git history and no baseline JSON anywhere in main's history.
 It remains record-only and writes no baseline. Private runs remain record-only;
 hosted visibility comes from the event, so omitting `--public` cannot downgrade a
-public PR. The initial committed baseline follows the history audit/publication,
-with explicit review/approval, never a private-run ceiling.
+public PR. The `perf` job checks baseline provenance and bootstrap eligibility after
+checkout, before installing tools or measuring. Collection rechecks the conditions
+and binds any bootstrap receipt to the measured main commit.
+
+When the repository first goes public and `perf` reports `blocked-missing-baseline`,
+a maintainer can run:
+
+```sh
+gh workflow run perf.yml --ref main -f first_public_bootstrap=true
+```
+
+Confirm the dispatch succeeded with `bootstrap-record-only` and review the sanitized
+`performance-metadata` artifact. Its `current.json` is a **candidate**, not an active
+baseline. Explicit approval and a separate baseline activation are required to make
+normal public runs pass; ordinary PRs cannot install their own ceilings. Never use a
+private-run ceiling or make missing baselines nonblocking.
 
 `task bench:gate -- --current <report> --baseline <reviewed-baseline> --decision
 <fresh-output>` compares collected metadata. `--summary` appends a status/gating
@@ -140,6 +154,13 @@ and binaries, requires the positive strace canary, then gathers ten fresh-proces
 pipeline resource samples. A timing regression triggers one new resource population;
 deterministic kernels are never rerun. Only sanitized metadata is uploaded, not
 corpora, archives, local build-path receipts, raw strace or Callgrind profiles.
+The release cache keys retain compiler/native compatibility and hash build inputs,
+not unrelated workflow edits. A separate main-populated cache holds just the pinned
+`gungraun-runner` executable, version-checked before use. Fork PRs do not restore
+these caches. Perf skips the hosted runner's SDK cleanup if at least 16 GiB are
+already free. Reports and observations are never restored from caches: even a warm
+run performs fresh Callgrind, pipeline, and syscall measurements.
+
 Missing observations/public baselines fail closed; no workflow fallback weakens
 public enforcement. Hosted PRs read ceilings from the immutable reviewed base tree,
 never from a ceiling raised in their own diff. The source guard also compares the committed Git trees, then checks worktree
